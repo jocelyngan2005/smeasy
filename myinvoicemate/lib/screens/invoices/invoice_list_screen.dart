@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../models/invoice_model.dart';
+import '../../backend/invoice/models/invoice_model.dart';
+import '../../backend/invoice/models/invoice_adapter.dart';
 import '../../services/invoice_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
@@ -14,8 +15,8 @@ class InvoiceListScreen extends StatefulWidget {
 
 class _InvoiceListScreenState extends State<InvoiceListScreen> {
   final _invoiceService = InvoiceService();
-  List<InvoiceModel> _invoices = [];
-  List<InvoiceModel> _filteredInvoices = [];
+  List<Invoice> _invoices = [];
+  List<Invoice> _filteredInvoices = [];
   bool _isLoading = true;
   String _filterStatus = 'all';
 
@@ -110,7 +111,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
     );
   }
 
-  Widget _buildInvoiceCard(InvoiceModel invoice) {
+  Widget _buildInvoiceCard(Invoice invoice) {
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
@@ -200,7 +201,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
                   ),
                 ],
               ),
-              if (invoice.requiresMyInvoisSubmission &&
+              if (invoice.requiresSubmission &&
                   invoice.myInvoisId == null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
