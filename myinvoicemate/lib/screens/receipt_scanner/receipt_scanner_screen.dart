@@ -3,7 +3,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../services/gemini_service.dart';
 import '../../services/invoice_service.dart';
-import '../../models/invoice_model.dart';
+import '../../backend/invoice/models/invoice_model.dart';
+import '../../backend/invoice/models/invoice_adapter.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../invoices/invoice_detail_screen.dart';
@@ -78,15 +79,15 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen> {
 
     try {
       final lineItems = (_extractedData!['lineItems'] as List)
-          .map((item) => InvoiceLineItem(
+          .map((item) => InvoiceLineItemHelper.createSimple(
                 description: item['description'],
-                quantity: item['quantity'],
-                unitPrice: item['unitPrice'],
-                amount: item['amount'],
+                quantity: item['quantity'].toDouble(),
+                unitPrice: item['unitPrice'].toDouble(),
+                taxRate: item['taxRate']?.toDouble(),
               ))
           .toList();
 
-      final invoice = InvoiceModel(
+      final invoice = InvoiceBuilder.fromSimpleData(
         id: 'draft_${DateTime.now().millisecondsSinceEpoch}',
         invoiceNumber: 'DRAFT-${DateTime.now().millisecondsSinceEpoch}',
         sellerId: 'user123',
@@ -95,14 +96,15 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen> {
         buyerId: '',
         buyerName: _extractedData!['buyerName'] ?? '',
         buyerTin: _extractedData!['buyerTin'] ?? '',
-        buyerAddress: _extractedData!['buyerAddress'] ?? '',
+        buyerAddress1: _extractedData!['buyerAddress'] ?? '',
         issueDate: DateTime.parse(_extractedData!['date']),
         lineItems: lineItems,
-        subtotal: _extractedData!['totalAmount'],
+        subtotal: _extractedData!['totalAmount'].toDouble(),
         taxAmount: 0.0,
-        totalAmount: _extractedData!['totalAmount'],
+        totalAmount: _extractedData!['totalAmount'].toDouble(),
         status: AppConstants.statusDraft,
-        createdAt: DateTime.now(),
+        createdBy: 'user123',
+        source: InvoiceSource.receiptScan,
       );
 
       await _invoiceService.createInvoice(invoice);

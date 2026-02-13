@@ -1,13 +1,22 @@
-import '../models/invoice_model.dart';
+import '../backend/invoice/models/invoice_model.dart';
+import '../backend/invoice/models/invoice_adapter.dart';
 
 class GeminiService {
   // Mock Voice-to-Invoice conversion
-  Future<InvoiceModel> generateInvoiceFromVoice(String transcription) async {
+  Future<Invoice> generateInvoiceFromVoice(String transcription) async {
     await Future.delayed(const Duration(seconds: 2)); // Simulate AI processing
 
     // Mock parsing of voice input
     // In real implementation, this would use Gemini AI to extract structured data
-    return InvoiceModel(
+    final lineItems = [
+      InvoiceLineItemHelper.createSimple(
+        description: 'Product/Service', // Extracted from voice
+        quantity: 1,
+        unitPrice: 1000.00, // Extracted from voice
+      ),
+    ];
+
+    return InvoiceBuilder.fromSimpleData(
       id: 'draft_${DateTime.now().millisecondsSinceEpoch}',
       invoiceNumber: 'DRAFT-${DateTime.now().millisecondsSinceEpoch}',
       sellerId: 'user123',
@@ -16,22 +25,15 @@ class GeminiService {
       buyerId: '',
       buyerName: 'Customer Name', // Extracted from voice
       buyerTin: '',
-      buyerAddress: '',
+      buyerAddress1: '',
       issueDate: DateTime.now(),
-      lineItems: [
-        InvoiceLineItem(
-          description: 'Product/Service', // Extracted from voice
-          quantity: 1,
-          unitPrice: 1000.00, // Extracted from voice
-          taxRate: 0.0,
-          amount: 1000.00,
-        ),
-      ],
+      lineItems: lineItems,
       subtotal: 1000.00,
       taxAmount: 0.0,
       totalAmount: 1000.00,
       status: 'draft',
-      createdAt: DateTime.now(),
+      createdBy: 'user123',
+      source: InvoiceSource.voice,
     );
   }
 
@@ -65,7 +67,7 @@ class GeminiService {
   }
 
   // Mock Invoice Validation
-  Future<Map<String, dynamic>> validateInvoice(InvoiceModel invoice) async {
+  Future<Map<String, dynamic>> validateInvoice(Invoice invoice) async {
     await Future.delayed(const Duration(seconds: 1));
 
     final errors = <String>[];
@@ -78,7 +80,7 @@ class GeminiService {
     if (invoice.lineItems.isEmpty) {
       errors.add('At least one line item is required');
     }
-    if (invoice.totalAmount >= 10000 && invoice.myInvoisId == null) {
+    if (invoice.totalAmount >= 10000 && invoice.myInvoisReferenceId == null) {
       warnings.add('Invoice exceeds RM10,000 - MyInvois submission required');
     }
 

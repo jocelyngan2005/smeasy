@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import '../../models/invoice_model.dart';
+import '../../backend/invoice/models/invoice_model.dart';
+import '../../backend/invoice/models/invoice_adapter.dart';
 import '../../services/invoice_service.dart';
 import '../../services/gemini_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 
 class InvoiceDetailScreen extends StatefulWidget {
-  final InvoiceModel invoice;
+  final Invoice invoice;
 
   const InvoiceDetailScreen({super.key, required this.invoice});
 
@@ -20,7 +21,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   bool _isLoading = false;
 
   Future<void> _submitToMyInvois() async {
-    if (!widget.invoice.requiresMyInvoisSubmission) {
+    if (!widget.invoice.requiresSubmission) {
       Helpers.showInfoSnackbar(
         context,
         'Invoice below RM10,000 - MyInvois submission optional',
@@ -321,7 +322,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                 style: TextStyle(color: Colors.grey[600], fontSize: 13),
               ),
               Text(
-                Helpers.formatCurrency(item.amount),
+                Helpers.formatCurrency(item.totalAmount),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ],
