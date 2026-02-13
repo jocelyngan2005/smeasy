@@ -7,7 +7,23 @@ class InvoiceModel {
   final String buyerId;
   final String buyerName;
   final String buyerTin;
+  // Buyer's Registration / Identification Number / Passport Number
+  // For Malaysian: MyKad/MyTentera, For non-Malaysian: Passport/MyPR/MyKAS
+  // Input "000000000000" if only TIN provided
+  final String buyerRegistrationNumber;
   final String buyerAddress;
+  // Buyer's Contact Number
+  final String buyerContactNumber;
+  // Buyer's SST Registration Number (input "NA" if not registered)
+  final String buyerSstNumber;
+
+  // Shipping Recipient Details (optional, for Annexure to e-Invoice)
+  final String? shippingRecipientName;
+  final String? shippingRecipientTin;
+  // Shipping Recipient's Registration / Identification Number / Passport Number
+  final String? shippingRecipientRegistrationNumber;
+  final String? shippingRecipientAddress;
+
   final DateTime issueDate;
   final List<InvoiceLineItem> lineItems;
   final double subtotal;
@@ -28,7 +44,14 @@ class InvoiceModel {
     required this.buyerId,
     required this.buyerName,
     required this.buyerTin,
+    required this.buyerRegistrationNumber,
     required this.buyerAddress,
+    required this.buyerContactNumber,
+    required this.buyerSstNumber,
+    this.shippingRecipientName,
+    this.shippingRecipientTin,
+    this.shippingRecipientRegistrationNumber,
+    this.shippingRecipientAddress,
     required this.issueDate,
     required this.lineItems,
     required this.subtotal,
@@ -51,9 +74,21 @@ class InvoiceModel {
       buyerId: json['buyerId'] ?? '',
       buyerName: json['buyerName'] ?? '',
       buyerTin: json['buyerTin'] ?? '',
+      buyerRegistrationNumber:
+          json['buyerRegistrationNumber'] ?? '000000000000',
       buyerAddress: json['buyerAddress'] ?? '',
-      issueDate: DateTime.parse(json['issueDate'] ?? DateTime.now().toIso8601String()),
-      lineItems: (json['lineItems'] as List?)
+      buyerContactNumber: json['buyerContactNumber'] ?? '',
+      buyerSstNumber: json['buyerSstNumber'] ?? 'NA',
+      shippingRecipientName: json['shippingRecipientName'],
+      shippingRecipientTin: json['shippingRecipientTin'],
+      shippingRecipientRegistrationNumber:
+          json['shippingRecipientRegistrationNumber'],
+      shippingRecipientAddress: json['shippingRecipientAddress'],
+      issueDate: DateTime.parse(
+        json['issueDate'] ?? DateTime.now().toIso8601String(),
+      ),
+      lineItems:
+          (json['lineItems'] as List?)
               ?.map((item) => InvoiceLineItem.fromJson(item))
               .toList() ??
           [],
@@ -63,8 +98,12 @@ class InvoiceModel {
       status: json['status'] ?? 'draft',
       myInvoisId: json['myInvoisId'],
       qrCode: json['qrCode'],
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-      submittedAt: json['submittedAt'] != null ? DateTime.parse(json['submittedAt']) : null,
+      createdAt: DateTime.parse(
+        json['createdAt'] ?? DateTime.now().toIso8601String(),
+      ),
+      submittedAt: json['submittedAt'] != null
+          ? DateTime.parse(json['submittedAt'])
+          : null,
     );
   }
 
@@ -78,7 +117,15 @@ class InvoiceModel {
       'buyerId': buyerId,
       'buyerName': buyerName,
       'buyerTin': buyerTin,
+      'buyerRegistrationNumber': buyerRegistrationNumber,
       'buyerAddress': buyerAddress,
+      'buyerContactNumber': buyerContactNumber,
+      'buyerSstNumber': buyerSstNumber,
+      'shippingRecipientName': shippingRecipientName,
+      'shippingRecipientTin': shippingRecipientTin,
+      'shippingRecipientRegistrationNumber':
+          shippingRecipientRegistrationNumber,
+      'shippingRecipientAddress': shippingRecipientAddress,
       'issueDate': issueDate.toIso8601String(),
       'lineItems': lineItems.map((item) => item.toJson()).toList(),
       'subtotal': subtotal,
@@ -93,6 +140,33 @@ class InvoiceModel {
   }
 
   bool get requiresMyInvoisSubmission => totalAmount >= 10000.0;
+
+  /// Validates if buyer information meets e-Invoice requirements
+  bool get hasValidBuyerInfo {
+    return buyerName.isNotEmpty &&
+        buyerTin.isNotEmpty &&
+        buyerRegistrationNumber.isNotEmpty &&
+        buyerAddress.isNotEmpty &&
+        buyerContactNumber.isNotEmpty &&
+        buyerSstNumber.isNotEmpty;
+  }
+
+  /// Validates if shipping recipient information is complete (when provided)
+  bool get hasValidShippingRecipient {
+    if (shippingRecipientName == null) return true; // Optional field
+    return shippingRecipientName!.isNotEmpty &&
+        (shippingRecipientTin?.isNotEmpty ?? false) &&
+        (shippingRecipientRegistrationNumber?.isNotEmpty ?? false) &&
+        (shippingRecipientAddress?.isNotEmpty ?? false);
+  }
+
+  /// Helper to create invoice with default e-Invoice values
+  /// For Malaysian individuals who only provide MyKad/MyTentera
+  static String getDefaultTinForMyKad() => 'EI00000000010';
+
+  /// Helper to create invoice with default registration number
+  /// When only TIN is provided
+  static String getDefaultRegistrationNumber() => '000000000000';
 }
 
 class InvoiceLineItem {

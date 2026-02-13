@@ -67,7 +67,15 @@ class InvoiceService {
       buyerId: invoice.buyerId,
       buyerName: invoice.buyerName,
       buyerTin: invoice.buyerTin,
+      buyerRegistrationNumber: invoice.buyerRegistrationNumber,
       buyerAddress: invoice.buyerAddress,
+      buyerContactNumber: invoice.buyerContactNumber,
+      buyerSstNumber: invoice.buyerSstNumber,
+      shippingRecipientName: invoice.shippingRecipientName,
+      shippingRecipientTin: invoice.shippingRecipientTin,
+      shippingRecipientRegistrationNumber:
+          invoice.shippingRecipientRegistrationNumber,
+      shippingRecipientAddress: invoice.shippingRecipientAddress,
       issueDate: invoice.issueDate,
       lineItems: invoice.lineItems,
       subtotal: invoice.subtotal,
@@ -102,7 +110,10 @@ class InvoiceService {
         buyerId: 'buyer1',
         buyerName: 'ABC Corporation',
         buyerTin: 'C98765432100',
-        buyerAddress: 'Petaling Jaya, Selangor',
+        buyerRegistrationNumber: '201601012345',
+        buyerAddress: '123 Jalan PJ 1, Petaling Jaya, Selangor',
+        buyerContactNumber: '+60123456789',
+        buyerSstNumber: 'A01-1234-56789012',
         issueDate: DateTime.now().subtract(const Duration(days: 5)),
         lineItems: [
           InvoiceLineItem(
@@ -129,9 +140,12 @@ class InvoiceService {
         sellerName: 'SME Trading Sdn Bhd',
         sellerTin: 'C12345678900',
         buyerId: 'buyer2',
-        buyerName: 'XYZ Enterprise',
-        buyerTin: 'C11223344556',
-        buyerAddress: 'Shah Alam, Selangor',
+        buyerName: 'Ahmad bin Abdullah',
+        buyerTin: 'EI00000000010',
+        buyerRegistrationNumber: '900101-01-1234',
+        buyerAddress: '45 Jalan SA 2, Shah Alam, Selangor',
+        buyerContactNumber: '+60129876543',
+        buyerSstNumber: 'NA',
         issueDate: DateTime.now().subtract(const Duration(days: 2)),
         lineItems: [
           InvoiceLineItem(
@@ -157,7 +171,10 @@ class InvoiceService {
         buyerId: 'buyer3',
         buyerName: 'Tech Solutions Ltd',
         buyerTin: 'C55667788990',
-        buyerAddress: 'Cyberjaya, Selangor',
+        buyerRegistrationNumber: '201801023456',
+        buyerAddress: '78 Jalan Cyber, Cyberjaya, Selangor',
+        buyerContactNumber: '+60387654321',
+        buyerSstNumber: 'A02-2345-67890123',
         issueDate: DateTime.now(),
         lineItems: [
           InvoiceLineItem(

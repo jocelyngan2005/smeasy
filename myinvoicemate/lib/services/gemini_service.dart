@@ -16,7 +16,10 @@ class GeminiService {
       buyerId: '',
       buyerName: 'Customer Name', // Extracted from voice
       buyerTin: '',
+      buyerRegistrationNumber: '000000000000',
       buyerAddress: '',
+      buyerContactNumber: '',
+      buyerSstNumber: 'NA',
       issueDate: DateTime.now(),
       lineItems: [
         InvoiceLineItem(
@@ -75,11 +78,31 @@ class GeminiService {
     if (invoice.buyerTin.isEmpty) {
       errors.add('Buyer TIN is required');
     }
+    if (invoice.buyerRegistrationNumber.isEmpty) {
+      errors.add(
+        'Buyer Registration/Identification/Passport Number is required',
+      );
+    }
+    if (invoice.buyerContactNumber.isEmpty) {
+      errors.add('Buyer Contact Number is required');
+    }
+    if (invoice.buyerSstNumber.isEmpty) {
+      errors.add('Buyer SST Number is required (use "NA" if not registered)');
+    }
     if (invoice.lineItems.isEmpty) {
       errors.add('At least one line item is required');
     }
     if (invoice.totalAmount >= 10000 && invoice.myInvoisId == null) {
       warnings.add('Invoice exceeds RM10,000 - MyInvois submission required');
+    }
+
+    // Validate e-Invoice compliance
+    if (!invoice.hasValidBuyerInfo) {
+      errors.add('Incomplete buyer information for e-Invoice compliance');
+    }
+    if (invoice.shippingRecipientName != null &&
+        !invoice.hasValidShippingRecipient) {
+      errors.add('Incomplete shipping recipient information');
     }
 
     return {

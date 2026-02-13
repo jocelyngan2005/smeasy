@@ -244,7 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+          colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -364,7 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           radius: 4,
                           color: Colors.white,
                           strokeWidth: 2,
-                          strokeColor: const Color(0xFF3B82F6),
+                          strokeColor: const Color(0xFF0533F4),
                         );
                       },
                     ),
@@ -418,10 +418,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         return PieChartSectionData(
                           value: status.count.toDouble(),
                           title: '',
-                          color: isTouched ? null : const Color(0xFFBFDBFE),
+                          color: isTouched ? null : const Color(0xFFB8C0E8),
                           gradient: isTouched 
                               ? const LinearGradient(
-                                  colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                                  colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 )
@@ -430,7 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           titleStyle: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: isTouched ? Colors.white : const Color(0xFF1E3A8A),
+                            color: isTouched ? Colors.white : const Color(0xFF2E3193),
                           ),
                         );
                       }).toList(),
