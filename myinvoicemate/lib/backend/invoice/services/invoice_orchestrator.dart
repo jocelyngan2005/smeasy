@@ -16,10 +16,9 @@ class InvoiceGenerationOrchestrator {
   final Uuid _uuid = const Uuid();
 
   InvoiceGenerationOrchestrator({
-    required String geminiApiKey,
     FirestoreInvoiceService? firestoreService,
-  })  : _geminiInvoiceService = GeminiInvoiceService(apiKey: geminiApiKey),
-        _geminiVisionService = GeminiVisionReceiptService(apiKey: geminiApiKey),
+  })  : _geminiInvoiceService = GeminiInvoiceService(),
+        _geminiVisionService = GeminiVisionReceiptService(),
         _firestoreService = firestoreService ?? FirestoreInvoiceService();
 
   // ==================== VOICE/TEXT TO INVOICE ====================

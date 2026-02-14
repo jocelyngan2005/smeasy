@@ -28,10 +28,8 @@ void main() async {
     ),
   );
 
-  // Initialize orchestrator
-  final orchestrator = InvoiceGenerationOrchestrator(
-    geminiApiKey: config.geminiApiKey,
-  );
+  // Initialize orchestrator (API key loaded from .env)
+  final orchestrator = InvoiceGenerationOrchestrator();
 
   // ==================== EXAMPLE 1: VOICE TO INVOICE ====================
   
