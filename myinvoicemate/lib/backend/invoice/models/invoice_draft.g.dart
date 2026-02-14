@@ -23,6 +23,11 @@ InvoiceDraft _$InvoiceDraftFromJson(Map<String, dynamic> json) => InvoiceDraft(
   buyer: json['buyer'] == null
       ? null
       : PartyInfoDraft.fromJson(json['buyer'] as Map<String, dynamic>),
+  shippingRecipient: json['shippingRecipient'] == null
+      ? null
+      : PartyInfoDraft.fromJson(
+          json['shippingRecipient'] as Map<String, dynamic>,
+        ),
   lineItems:
       (json['lineItems'] as List<dynamic>?)
           ?.map((e) => InvoiceLineItemDraft.fromJson(e as Map<String, dynamic>))
@@ -59,6 +64,7 @@ Map<String, dynamic> _$InvoiceDraftToJson(InvoiceDraft instance) =>
       'dueDate': instance.dueDate?.toIso8601String(),
       'vendor': instance.vendor?.toJson(),
       'buyer': instance.buyer?.toJson(),
+      'shippingRecipient': instance.shippingRecipient?.toJson(),
       'lineItems': instance.lineItems.map((e) => e.toJson()).toList(),
       'subtotal': instance.subtotal,
       'taxAmount': instance.taxAmount,
@@ -92,6 +98,9 @@ PartyInfoDraft _$PartyInfoDraftFromJson(Map<String, dynamic> json) =>
       name: json['name'] as String?,
       tin: json['tin'] as String?,
       registrationNumber: json['registrationNumber'] as String?,
+      identificationNumber: json['identificationNumber'] as String?,
+      contactNumber: json['contactNumber'] as String?,
+      sstNumber: json['sstNumber'] as String?,
       email: json['email'] as String?,
       phone: json['phone'] as String?,
       address: json['address'] == null
@@ -105,6 +114,9 @@ Map<String, dynamic> _$PartyInfoDraftToJson(PartyInfoDraft instance) =>
       'name': instance.name,
       'tin': instance.tin,
       'registrationNumber': instance.registrationNumber,
+      'identificationNumber': instance.identificationNumber,
+      'contactNumber': instance.contactNumber,
+      'sstNumber': instance.sstNumber,
       'email': instance.email,
       'phone': instance.phone,
       'address': instance.address,

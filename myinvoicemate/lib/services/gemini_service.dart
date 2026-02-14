@@ -96,7 +96,7 @@ class GeminiService {
     }
 
     // Validate e-Invoice compliance
-    if (!invoice.hasValidBuyerInfo) {
+    if (!invoice.hasValidShippingRecipient) {
       errors.add('Incomplete buyer information for e-Invoice compliance');
     }
     if (invoice.shippingRecipientName != null &&

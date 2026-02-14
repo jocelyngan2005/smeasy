@@ -498,7 +498,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                                 SizedBox(
                                   width: 70,
                                   child: Text(
-                                    item.amount.toStringAsFixed(2),
+                                    (item.quantity * item.unitPrice).toStringAsFixed(2),
                                     style: const TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
@@ -539,7 +539,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                                 Helpers.formatCurrency(
                                   widget.invoice.lineItems.fold(
                                     0.0,
-                                    (sum, item) => sum + item.amount,
+                                    (sum, item) => sum + (item.quantity * item.unitPrice),
                                   ),
                                 ),
                                 style: const TextStyle(

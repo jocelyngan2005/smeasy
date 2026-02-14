@@ -36,6 +36,9 @@ class Invoice {
   final bool isWithinRelaxationPeriod;
   final bool requiresSubmission; // Based on RM10k threshold
   
+  // Shipping Recipient (optional, for Annexure to e-Invoice)
+  final PartyInfo? shippingRecipient;
+  
   // Metadata
   final String? notes;
   final Map<String, dynamic>? metadata;
@@ -65,6 +68,7 @@ class Invoice {
     this.submissionDate,
     this.isWithinRelaxationPeriod = false,
     this.requiresSubmission = true,
+    this.shippingRecipient,
     this.notes,
     this.metadata,
     required this.createdAt,
@@ -97,6 +101,7 @@ class Invoice {
     DateTime? submissionDate,
     bool? isWithinRelaxationPeriod,
     bool? requiresSubmission,
+    PartyInfo? shippingRecipient,
     String? notes,
     Map<String, dynamic>? metadata,
     DateTime? updatedAt,
@@ -123,6 +128,7 @@ class Invoice {
       submissionDate: submissionDate ?? this.submissionDate,
       isWithinRelaxationPeriod: isWithinRelaxationPeriod ?? this.isWithinRelaxationPeriod,
       requiresSubmission: requiresSubmission ?? this.requiresSubmission,
+      shippingRecipient: shippingRecipient ?? this.shippingRecipient,
       notes: notes ?? this.notes,
       metadata: metadata ?? this.metadata,
       createdAt: createdAt,
@@ -131,15 +137,30 @@ class Invoice {
       source: source ?? this.source,
     );
   }
+  
+  /// Validates if shipping recipient information is complete (when provided)
+  bool get hasValidShippingRecipient {
+    if (shippingRecipient == null) return true; // Optional field
+    return shippingRecipient!.name.isNotEmpty &&
+        (shippingRecipient!.tin?.isNotEmpty ?? false) &&
+        (shippingRecipient!.identificationNumber?.isNotEmpty ?? false) &&
+        shippingRecipient!.address.line1.isNotEmpty;
+  }
 }
 
 @JsonSerializable()
 class PartyInfo {
   final String name;
   final String? tin; // Tax Identification Number
-  final String? registrationNumber;
+  final String? registrationNumber; // Company registration number
+  
+  // e-Invoice Compliance Fields (LHDN 4.6)
+  final String? identificationNumber; // MyKad/MyTentera/Passport/MyPR/MyKAS (for individuals)
+  final String? contactNumber; // Required contact number for buyers
+  final String? sstNumber; // SST Registration Number (use "NA" if not registered)
+  
   final String? email;
-  final String? phone;
+  final String? phone; // Kept for backward compatibility
   final Address address;
   final String? contactPerson;
 
@@ -147,6 +168,9 @@ class PartyInfo {
     required this.name,
     this.tin,
     this.registrationNumber,
+    this.identificationNumber,
+    this.contactNumber,
+    this.sstNumber,
     this.email,
     this.phone,
     required this.address,
@@ -155,6 +179,51 @@ class PartyInfo {
 
   factory PartyInfo.fromJson(Map<String, dynamic> json) => _$PartyInfoFromJson(json);
   Map<String, dynamic> toJson() => _$PartyInfoToJson(this);
+
+  PartyInfo copyWith({
+    String? name,
+    String? tin,
+    String? registrationNumber,
+    String? identificationNumber,
+    String? contactNumber,
+    String? sstNumber,
+    String? email,
+    String? phone,
+    Address? address,
+    String? contactPerson,
+  }) {
+    return PartyInfo(
+      name: name ?? this.name,
+      tin: tin ?? this.tin,
+      registrationNumber: registrationNumber ?? this.registrationNumber,
+      identificationNumber: identificationNumber ?? this.identificationNumber,
+      contactNumber: contactNumber ?? this.contactNumber,
+      sstNumber: sstNumber ?? this.sstNumber,
+      email: email ?? this.email,
+      phone: phone ?? this.phone,
+      address: address ?? this.address,
+      contactPerson: contactPerson ?? this.contactPerson,
+    );
+  }
+
+  /// Validates if buyer information meets e-Invoice requirements
+  bool get hasValidBuyerInfo {
+    return name.isNotEmpty &&
+        (tin?.isNotEmpty ?? false) &&
+        (identificationNumber?.isNotEmpty ?? identificationNumber == '000000000000') &&
+        address.line1.isNotEmpty &&
+        (contactNumber?.isNotEmpty ?? false) &&
+        (sstNumber?.isNotEmpty ?? false);
+  }
+
+  /// Helper for default identification number when only TIN is provided
+  static String getDefaultIdentificationNumber() => '000000000000';
+  
+  /// Helper for default TIN when only MyKad is provided (Malaysian individuals)
+  static String getDefaultTinForMyKad() => 'EI00000000010';
+  
+  /// Helper for default SST number when not registered
+  static String getDefaultSstNumber() => 'NA';
 }
 
 @JsonSerializable()
@@ -179,6 +248,26 @@ class Address {
 
   factory Address.fromJson(Map<String, dynamic> json) => _$AddressFromJson(json);
   Map<String, dynamic> toJson() => _$AddressToJson(this);
+
+  Address copyWith({
+    String? line1,
+    String? line2,
+    String? line3,
+    String? city,
+    String? state,
+    String? postalCode,
+    String? country,
+  }) {
+    return Address(
+      line1: line1 ?? this.line1,
+      line2: line2 ?? this.line2,
+      line3: line3 ?? this.line3,
+      city: city ?? this.city,
+      state: state ?? this.state,
+      postalCode: postalCode ?? this.postalCode,
+      country: country ?? this.country,
+    );
+  }
 }
 
 @JsonSerializable()

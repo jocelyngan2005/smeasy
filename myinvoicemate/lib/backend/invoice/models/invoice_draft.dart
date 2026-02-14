@@ -14,6 +14,7 @@ class InvoiceDraft {
   // Party Information (may be incomplete)
   final PartyInfoDraft? vendor;
   final PartyInfoDraft? buyer;
+  final PartyInfoDraft? shippingRecipient; // Optional, for Annexure to e-Invoice
   
   // Line Items
   final List<InvoiceLineItemDraft> lineItems;
@@ -42,6 +43,7 @@ class InvoiceDraft {
     this.dueDate,
     this.vendor,
     this.buyer,
+    this.shippingRecipient,
     this.lineItems = const [],
     this.subtotal,
     this.taxAmount,
@@ -128,6 +130,12 @@ class PartyInfoDraft {
   final String? name;
   final String? tin;
   final String? registrationNumber;
+  
+  // e-Invoice Compliance Fields (LHDN 4.6)
+  final String? identificationNumber; // MyKad/MyTentera/Passport/MyPR/MyKAS
+  final String? contactNumber; // Required for buyers
+  final String? sstNumber; // SST Registration Number
+  
   final String? email;
   final String? phone;
   final AddressDraft? address;
@@ -137,6 +145,9 @@ class PartyInfoDraft {
     this.name,
     this.tin,
     this.registrationNumber,
+    this.identificationNumber,
+    this.contactNumber,
+    this.sstNumber,
     this.email,
     this.phone,
     this.address,
@@ -151,6 +162,9 @@ class PartyInfoDraft {
       name: name!,
       tin: tin,
       registrationNumber: registrationNumber,
+      identificationNumber: identificationNumber,
+      contactNumber: contactNumber,
+      sstNumber: sstNumber,
       email: email,
       phone: phone,
       address: address!.toAddress(),

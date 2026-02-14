@@ -31,7 +31,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
 
   final _picker = ImagePicker();
   File? _imageFile;
-  InvoiceModel? _previewInvoice;
+  Invoice? _previewInvoice;
   bool _isEditingInvoice = false;
 
   // Invoice editing controllers
@@ -621,7 +621,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     );
   }
 
-  Widget _buildInvoicePreviewCard(InvoiceModel invoice) {
+  Widget _buildInvoicePreviewCard(Invoice invoice) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -660,60 +660,58 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                               _lineItemControllers[i]['unitPrice']!.text,
                             ) ??
                             0.0;
-                        final amount = quantity * unitPrice;
 
+                        // Use the helper to create properly structured line item
                         updatedLineItems.add(
-                          InvoiceLineItem(
+                          InvoiceLineItemHelper.createSimple(
                             description: description,
                             quantity: quantity,
                             unitPrice: unitPrice,
                             taxRate: _previewInvoice!.lineItems[i].taxRate,
-                            amount: amount,
                           ),
                         );
                       }
 
-                      // Calculate subtotal from line items
+                      // Calculate totals from line items
                       final subtotal = updatedLineItems.fold(
                         0.0,
-                        (sum, item) => sum + item.amount,
+                        (sum, item) => sum + item.subtotal,
                       );
-                      final taxAmount =
-                          double.tryParse(_taxAmountController.text) ?? 0.0;
-                      final totalAmount = subtotal + taxAmount;
+                      final taxAmount = updatedLineItems.fold(
+                        0.0,
+                        (sum, item) => sum + (item.taxAmount ?? 0.0),
+                      );
+                      final totalAmount = updatedLineItems.fold(
+                        0.0,
+                        (sum, item) => sum + item.totalAmount,
+                      );
 
-                      _previewInvoice = InvoiceModel(
-                        id: _previewInvoice!.id,
-                        invoiceNumber: _previewInvoice!.invoiceNumber,
-                        sellerId: _previewInvoice!.sellerId,
-                        sellerName: _sellerNameController.text,
-                        sellerTin: _sellerTinController.text,
-                        buyerId: _buyerIdController.text,
-                        buyerName: _customerNameController.text,
-                        buyerTin: _tinController.text,
-                        buyerRegistrationNumber:
-                            _previewInvoice!.buyerRegistrationNumber,
-                        buyerAddress: _buyerAddressController.text,
-                        buyerContactNumber: _previewInvoice!.buyerContactNumber,
-                        buyerSstNumber: _previewInvoice!.buyerSstNumber,
-                        shippingRecipientName:
-                            _previewInvoice!.shippingRecipientName,
-                        shippingRecipientTin:
-                            _previewInvoice!.shippingRecipientTin,
-                        shippingRecipientRegistrationNumber: _previewInvoice!
-                            .shippingRecipientRegistrationNumber,
-                        shippingRecipientAddress:
-                            _previewInvoice!.shippingRecipientAddress,
-                        issueDate: _previewInvoice!.issueDate,
+                      // Parse address from text field
+                      final buyerAddressParts = _buyerAddressController.text.split(', ');
+                      
+                      // Use copyWith to update the invoice
+                      _previewInvoice = _previewInvoice!.copyWith(
+                        vendor: _previewInvoice!.vendor.copyWith(
+                          name: _sellerNameController.text,
+                          tin: _sellerTinController.text,
+                        ),
+                        buyer: _previewInvoice!.buyer.copyWith(
+                          name: _customerNameController.text,
+                          tin: _tinController.text,
+                          address: buyerAddressParts.isNotEmpty
+                              ? Address(
+                                  line1: buyerAddressParts[0],
+                                  line2: buyerAddressParts.length > 1 ? buyerAddressParts[1] : null,
+                                  city: _previewInvoice!.buyer.address.city,
+                                  state: _previewInvoice!.buyer.address.state,
+                                  postalCode: _previewInvoice!.buyer.address.postalCode,
+                                )
+                              : _previewInvoice!.buyer.address,
+                        ),
                         lineItems: updatedLineItems,
                         subtotal: subtotal,
                         taxAmount: taxAmount,
                         totalAmount: totalAmount,
-                        status: _statusController.text,
-                        myInvoisId: _previewInvoice!.myInvoisId,
-                        qrCode: _previewInvoice!.qrCode,
-                        createdAt: _previewInvoice!.createdAt,
-                        submittedAt: _previewInvoice!.submittedAt,
                       );
                     }
                     _isEditingInvoice = false;
@@ -1008,7 +1006,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                                     ) ??
                                     0.0),
                           )
-                        : Helpers.formatCurrency(item.amount),
+                        : Helpers.formatCurrency((item.quantity * item.unitPrice)),
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
@@ -1052,7 +1050,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                     : Helpers.formatCurrency(
                         invoice.lineItems.fold(
                           0.0,
-                          (sum, item) => sum + item.amount,
+                          (sum, item) => sum + (item.quantity * item.unitPrice),
                         ),
                       ),
                 style: const TextStyle(

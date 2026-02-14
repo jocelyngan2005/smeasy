@@ -15,6 +15,9 @@ extension InvoiceBuilder on Invoice {
     required String sellerId,
     required String sellerName,
     required String sellerTin,
+    String? sellerIdentificationNumber,
+    String? sellerContactNumber,
+    String? sellerSstNumber,
     String? sellerEmail,
     String? sellerPhone,
     String? sellerAddress1,
@@ -25,6 +28,9 @@ extension InvoiceBuilder on Invoice {
     required String buyerId,
     required String buyerName,
     required String buyerTin,
+    String? buyerIdentificationNumber,
+    String? buyerContactNumber,
+    String? buyerSstNumber,
     String? buyerEmail,
     String? buyerPhone,
     String? buyerAddress1,
@@ -32,6 +38,15 @@ extension InvoiceBuilder on Invoice {
     String? buyerCity,
     String? buyerState,
     String? buyerPostalCode,
+    String? shippingRecipientName,
+    String? shippingRecipientTin,
+    String? shippingRecipientIdentificationNumber,
+    String? shippingRecipientContactNumber,
+    String? shippingRecipientAddress1,
+    String? shippingRecipientAddress2,
+    String? shippingRecipientCity,
+    String? shippingRecipientState,
+    String? shippingRecipientPostalCode,
     required DateTime issueDate,
     DateTime? dueDate,
     required List<InvoiceLineItem> lineItems,
@@ -67,6 +82,9 @@ extension InvoiceBuilder on Invoice {
       name: sellerName,
       tin: sellerTin,
       registrationNumber: sellerId != 'user123' ? sellerId : null,
+      identificationNumber: sellerIdentificationNumber ?? PartyInfo.getDefaultIdentificationNumber(),
+      contactNumber: sellerContactNumber,
+      sstNumber: sellerSstNumber ?? PartyInfo.getDefaultSstNumber(),
       email: sellerEmail,
       phone: sellerPhone,
       address: Address(
@@ -83,6 +101,9 @@ extension InvoiceBuilder on Invoice {
       name: buyerName,
       tin: buyerTin,
       registrationNumber: buyerId.isNotEmpty ? buyerId : null,
+      identificationNumber: buyerIdentificationNumber ?? PartyInfo.getDefaultIdentificationNumber(),
+      contactNumber: buyerContactNumber,
+      sstNumber: buyerSstNumber ?? PartyInfo.getDefaultSstNumber(),
       email: buyerEmail,
       phone: buyerPhone,
       address: Address(
@@ -93,6 +114,24 @@ extension InvoiceBuilder on Invoice {
         postalCode: buyerPostalCode ?? '00000',
       ),
     );
+    
+    // Create shipping recipient (optional)
+    PartyInfo? shippingRecipient;
+    if (shippingRecipientName != null && shippingRecipientName.isNotEmpty) {
+      shippingRecipient = PartyInfo(
+        name: shippingRecipientName,
+        tin: shippingRecipientTin,
+        identificationNumber: shippingRecipientIdentificationNumber ?? PartyInfo.getDefaultIdentificationNumber(),
+        contactNumber: shippingRecipientContactNumber,
+        address: Address(
+          line1: shippingRecipientAddress1 ?? 'N/A',
+          line2: shippingRecipientAddress2,
+          city: shippingRecipientCity ?? 'Unknown',
+          state: shippingRecipientState ?? 'Unknown',
+          postalCode: shippingRecipientPostalCode ?? '00000',
+        ),
+      );
+    }
 
     final now = DateTime.now();
     final requiresSubmission = totalAmount >= 10000.0;
@@ -113,6 +152,7 @@ extension InvoiceBuilder on Invoice {
       complianceStatus: complianceStatus,
       requiresSubmission: requiresSubmission,
       isWithinRelaxationPeriod: false,
+      shippingRecipient: shippingRecipient,
       notes: notes,
       createdAt: now,
       updatedAt: now,
@@ -182,8 +222,24 @@ extension InvoiceCompat on Invoice {
   String? get buyerPhone => buyer.phone;
   String get buyerAddress => 
       '${buyer.address.line1}${buyer.address.line2 != null ? ', ${buyer.address.line2}' : ''}, ${buyer.address.city}, ${buyer.address.state} ${buyer.address.postalCode}';
+    // e-Invoice Compliance getters
+  String get buyerRegistrationNumber => buyer.identificationNumber ?? PartyInfo.getDefaultIdentificationNumber();
+  String get buyerContactNumber => buyer.contactNumber ?? '';
+  String get buyerSstNumber => buyer.sstNumber ?? PartyInfo.getDefaultSstNumber();
   
-  // Status for backwards compatibility
+  String get sellerRegistrationNumber => vendor.identificationNumber ?? PartyInfo.getDefaultIdentificationNumber();
+  String get sellerContactNumber => vendor.contactNumber ?? '';
+  String get sellerSstNumber => vendor.sstNumber ?? PartyInfo.getDefaultSstNumber();
+  
+  // Shipping recipient getters
+  String? get shippingRecipientName => shippingRecipient?.name;
+  String? get shippingRecipientTin => shippingRecipient?.tin;
+  String? get shippingRecipientRegistrationNumber => shippingRecipient?.identificationNumber;
+  String? get shippingRecipientContactNumber => shippingRecipient?.contactNumber;
+  String? get shippingRecipientAddress => shippingRecipient != null
+      ? '${shippingRecipient!.address.line1}${shippingRecipient!.address.line2 != null ? ', ${shippingRecipient!.address.line2}' : ''}, ${shippingRecipient!.address.city}, ${shippingRecipient!.address.state} ${shippingRecipient!.address.postalCode}'
+      : null;
+    // Status for backwards compatibility
   String get status {
     switch (complianceStatus) {
       case ComplianceStatus.draft:
