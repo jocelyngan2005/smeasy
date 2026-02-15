@@ -1,5 +1,5 @@
 import '../models/customer_model.dart';
-import '../backend/invoice/models/invoice_model.dart';
+import '../../invoice/models/invoice_model.dart';
 
 class CustomerService {
   // Mock in-memory storage (replace with Firebase later)

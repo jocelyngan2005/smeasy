@@ -1,5 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
-import '../backend/invoice/models/invoice_model.dart';
+import '../../invoice/models/invoice_model.dart';
 
 part 'customer_model.g.dart';
 

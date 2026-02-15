@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../services/auth_service.dart';
-import '../../models/user_model.dart';
+import '../../backend/auth/services/auth_service.dart';
+import '../../backend/auth/models/user_model.dart';
 import '../../utils/helpers.dart';
 
 class ManageProfileScreen extends StatefulWidget {

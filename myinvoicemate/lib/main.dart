@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'services/auth_service.dart';
+import 'backend/auth/services/auth_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/navigation/main_navigation_screen.dart';
 import 'utils/constants.dart';

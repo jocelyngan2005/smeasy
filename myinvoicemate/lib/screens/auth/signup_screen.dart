@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../services/auth_service.dart';
+import '../../backend/auth/services/auth_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../navigation/main_navigation_screen.dart';

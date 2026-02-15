@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../models/customer_model.dart';
-import '../../services/customer_service.dart';
-import '../../services/auth_service.dart';
+import '../../backend/customer/models/customer_model.dart';
+import '../../backend/customer/services/customer_service.dart';
+import '../../backend/auth/services/auth_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 

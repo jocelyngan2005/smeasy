@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../services/knowledge_assistant_service.dart';
+import '../../backend/knowledge_assistant/knowledge_assistant_service.dart';
 import '../../utils/constants.dart';
 
 class KnowledgeAssistantScreen extends StatefulWidget {

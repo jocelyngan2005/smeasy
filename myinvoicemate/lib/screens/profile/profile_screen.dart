@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../services/auth_service.dart';
+import '../../backend/auth/services/auth_service.dart';
 import '../auth/login_screen.dart';
 import '../support/support_locator_screen.dart';
 import 'manage_profile_screen.dart';

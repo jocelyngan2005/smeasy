@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../models/compliance_model.dart';
-import '../../services/compliance_service.dart';
+import '../../backend/compliance/models/compliance_model.dart';
+import '../../backend/compliance/services/compliance_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 

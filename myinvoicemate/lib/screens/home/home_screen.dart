@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../../services/auth_service.dart';
-import '../../services/compliance_service.dart';
+import '../../backend/auth/services/auth_service.dart';
+import '../../backend/compliance/services/compliance_service.dart';
 import '../../backend/invoice/services/invoice_service.dart';
-import '../../services/analytics_service.dart';
-import '../../models/analytics_model.dart';
+import '../../backend/analytics/services/analytics_service.dart';
+import '../../backend/analytics/models/analytics_model.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../notifications/notification_screen.dart';

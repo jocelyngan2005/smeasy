@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import '../../models/support_location_model.dart';
-import '../../services/support_service.dart';
+import '../../backend/support/models/support_location_model.dart';
+import '../../backend/support/services/support_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import 'package:url_launcher/url_launcher.dart';
