@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import '../../services/invoice_service.dart';
+import '../../backend/invoice/services/invoice_service.dart';
 import '../../backend/invoice/models/invoice_model.dart';
 import '../../backend/invoice/models/invoice_adapter.dart';
 import '../../backend/invoice/models/invoice_draft.dart';

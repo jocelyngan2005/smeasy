@@ -1,7 +1,7 @@
 import 'package:uuid/uuid.dart';
-import '../backend/invoice/models/invoice_model.dart';
-import '../backend/invoice/models/invoice_adapter.dart';
-import '../utils/constants.dart';
+import '../models/invoice_model.dart';
+import '../models/invoice_adapter.dart';
+import '../../../utils/constants.dart';
 
 class InvoiceService {
   final List<Invoice> _mockInvoices = [];

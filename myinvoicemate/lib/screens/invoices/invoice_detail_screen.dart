@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../backend/invoice/models/invoice_model.dart';
 import '../../backend/invoice/models/invoice_adapter.dart';
-import '../../services/invoice_service.dart';
-import '../../services/gemini_service.dart';
+import '../../backend/invoice/services/invoice_service.dart';
+import '../../backend/invoice/services/gemini_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 

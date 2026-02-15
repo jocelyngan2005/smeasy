@@ -1,5 +1,5 @@
-import '../backend/invoice/models/invoice_model.dart';
-import '../backend/invoice/models/invoice_adapter.dart';
+import '../models/invoice_model.dart';
+import '../models/invoice_adapter.dart';
 
 class GeminiService {
   // Mock Voice-to-Invoice conversion

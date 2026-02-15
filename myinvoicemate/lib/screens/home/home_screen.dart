@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../services/auth_service.dart';
 import '../../services/compliance_service.dart';
-import '../../services/invoice_service.dart';
+import '../../backend/invoice/services/invoice_service.dart';
 import '../../services/analytics_service.dart';
 import '../../models/analytics_model.dart';
 import '../../utils/constants.dart';
