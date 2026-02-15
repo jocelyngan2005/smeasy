@@ -42,7 +42,7 @@ class InvoiceGenerationOrchestrator {
       String? draftId;
       if (saveDraft && _firestoreService != null) {
         try {
-          draftId = await _firestoreService!.saveDraft(draft, userId);
+          draftId = await _firestoreService.saveDraft(draft, userId);
         } catch (e) {
           // Firestore not available, continue without saving
           print('Warning: Could not save draft to Firestore: $e');
@@ -83,7 +83,7 @@ class InvoiceGenerationOrchestrator {
       String? draftId;
       if (_firestoreService != null) {
         try {
-          draftId = await _firestoreService!.saveDraft(refinedDraft, userId);
+          draftId = await _firestoreService.saveDraft(refinedDraft, userId);
         } catch (e) {
           print('Warning: Could not save draft to Firestore: $e');
         }
@@ -124,7 +124,7 @@ class InvoiceGenerationOrchestrator {
       String? draftId;
       if (saveDraft && _firestoreService != null) {
         try {
-          draftId = await _firestoreService!.saveDraft(draft, userId);
+          draftId = await _firestoreService.saveDraft(draft, userId);
         } catch (e) {
           // Firestore not available, continue without saving
           print('Warning: Could not save draft to Firestore: $e');
@@ -166,7 +166,7 @@ class InvoiceGenerationOrchestrator {
       String? draftId;
       if (saveDraft && _firestoreService != null) {
         try {
-          draftId = await _firestoreService!.saveDraft(draft, userId);
+          draftId = await _firestoreService.saveDraft(draft, userId);
         } catch (e) {
           print('Warning: Could not save draft to Firestore: $e');
         }
@@ -247,7 +247,7 @@ class InvoiceGenerationOrchestrator {
       // Save to Firestore
       if (_firestoreService != null) {
         try {
-          await _firestoreService!.saveInvoice(invoice);
+          await _firestoreService.saveInvoice(invoice);
         } catch (e) {
           print('Warning: Could not save invoice to Firestore: $e');
         }
@@ -297,7 +297,7 @@ class InvoiceGenerationOrchestrator {
       // Update invoice status
       if (_firestoreService != null) {
         try {
-          await _firestoreService!.updateComplianceStatus(
+          await _firestoreService.updateComplianceStatus(
             invoiceId: invoice.id,
             status: ComplianceStatus.submitted,
             myInvoisReferenceId: mockReferenceId,
@@ -358,7 +358,7 @@ class InvoiceGenerationOrchestrator {
   Future<InvoiceDraft?> getDraft(String draftId) async {
     if (_firestoreService == null) return null;
     try {
-      return await _firestoreService!.getDraft(draftId);
+      return await _firestoreService.getDraft(draftId);
     } catch (e) {
       print('Warning: Could not get draft from Firestore: $e');
       return null;
@@ -369,7 +369,7 @@ class InvoiceGenerationOrchestrator {
   Future<Invoice?> getInvoice(String invoiceId) async {
     if (_firestoreService == null) return null;
     try {
-      return await _firestoreService!.getInvoice(invoiceId);
+      return await _firestoreService.getInvoice(invoiceId);
     } catch (e) {
       print('Warning: Could not get invoice from Firestore: $e');
       return null;
@@ -380,7 +380,7 @@ class InvoiceGenerationOrchestrator {
   Future<List<InvoiceDraft>> listDrafts(String userId) async {
     if (_firestoreService == null) return [];
     try {
-      return await _firestoreService!.getDraftsByUser(userId);
+      return await _firestoreService.getDraftsByUser(userId);
     } catch (e) {
       print('Warning: Could not list drafts from Firestore: $e');
       return [];
@@ -391,7 +391,7 @@ class InvoiceGenerationOrchestrator {
   Future<List<Invoice>> listInvoices(String userId) async {
     if (_firestoreService == null) return [];
     try {
-      return await _firestoreService!.getInvoicesByUser(userId);
+      return await _firestoreService.getInvoicesByUser(userId);
     } catch (e) {
       print('Warning: Could not list invoices from Firestore: $e');
       return [];

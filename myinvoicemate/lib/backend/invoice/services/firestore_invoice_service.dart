@@ -14,22 +14,6 @@ class FirestoreInvoiceService {
   static const String buyersCollection = 'buyers';
 
   FirestoreInvoiceService({dynamic firestore});
-}
-
-// Helper class to store draft with metadata
-class _DraftWithMetadata {
-  final String id;
-  final String userId;
-  final DateTime createdAt;
-  final InvoiceDraft draft;
-
-  _DraftWithMetadata({
-    required this.id,
-    required this.userId,
-    required this.createdAt,
-    required this.draft,
-  });
-}
 
   // ==================== INVOICE OPERATIONS ====================
 
@@ -372,4 +356,19 @@ class _DraftWithMetadata {
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     }
   }
+}
+
+// Helper class to store draft with metadata
+class _DraftWithMetadata {
+  final String id;
+  final String userId;
+  final DateTime createdAt;
+  final InvoiceDraft draft;
+
+  _DraftWithMetadata({
+    required this.id,
+    required this.userId,
+    required this.createdAt,
+    required this.draft,
+  });
 }
