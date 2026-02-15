@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/invoice_draft.dart';
 import '../models/invoice_model.dart';
 
@@ -10,12 +11,16 @@ class GeminiInvoiceService {
   final String _apiKey;
   final Uuid _uuid = const Uuid();
 
-  GeminiInvoiceService({required String apiKey})
-      : _apiKey = apiKey,
+  GeminiInvoiceService()
+      : _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '',
         _model = GenerativeModel(
-          model: 'gemini-1.5-flash',
-          apiKey: apiKey,
-        );
+          model: 'gemini-2.5-flash',
+          apiKey: dotenv.env['GEMINI_API_KEY'] ?? '',
+        ) {
+    if (_apiKey.isEmpty) {
+      throw Exception('GEMINI_API_KEY not found in .env file');
+    }
+  }
 
   /// Generate invoice draft from voice/text input
   /// 
@@ -85,10 +90,15 @@ Return ONLY valid JSON in this exact structure:
   "buyer": {
     "name": "string or null",
     "tin": "string or null",
+    "registrationNumber": "string or null",
+    "identificationNumber": "string or null (MyKad/Passport/MyPR)",
+    "contactNumber": "string or null (phone with country code)",
+    "sstNumber": "string or null (use 'NA' if not registered)",
     "email": "string or null",
     "phone": "string or null",
     "address": {
       "line1": "string or null",
+      "line2": "string or null",
       "city": "string or null",
       "state": "string or null",
       "postalCode": "string or null",
@@ -148,6 +158,10 @@ Do not include any markdown formatting, code blocks, or explanations. Return onl
       buyer = PartyInfoDraft(
         name: buyerData['name'] as String?,
         tin: buyerData['tin'] as String?,
+        registrationNumber: buyerData['registrationNumber'] as String?,
+        identificationNumber: buyerData['identificationNumber'] as String?,
+        contactNumber: buyerData['contactNumber'] as String? ?? buyerData['phone'] as String?,
+        sstNumber: buyerData['sstNumber'] as String?,
         email: buyerData['email'] as String?,
         phone: buyerData['phone'] as String?,
         address: addressData != null

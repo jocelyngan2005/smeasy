@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/invoice_draft.dart';
 import '../models/invoice_model.dart';
 
@@ -12,12 +13,16 @@ class GeminiVisionReceiptService {
   final String _apiKey;
   final Uuid _uuid = const Uuid();
 
-  GeminiVisionReceiptService({required String apiKey})
-      : _apiKey = apiKey,
+  GeminiVisionReceiptService()
+      : _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '',
         _visionModel = GenerativeModel(
-          model: 'gemini-1.5-flash',
-          apiKey: apiKey,
-        );
+          model: 'gemini-2.5-flash',
+          apiKey: dotenv.env['GEMINI_API_KEY'] ?? '',
+        ) {
+    if (_apiKey.isEmpty) {
+      throw Exception('GEMINI_API_KEY not found in .env file');
+    }
+  }
 
   /// Scan receipt image and extract invoice information
   Future<InvoiceDraft> scanReceipt({
@@ -128,8 +133,10 @@ Return ONLY valid JSON in this structure:
   "vendor": {
     "name": "string or null",
     "tin": "string or null",
-    "sstNumber": "string or null",
     "registrationNumber": "string or null",
+    "identificationNumber": "string or null (MyKad/Passport if individual)",
+    "contactNumber": "string or null (phone with country code)",
+    "sstNumber": "string or null (use 'NA' if not registered)",
     "email": "string or null",
     "phone": "string or null",
     "address": {
@@ -144,10 +151,15 @@ Return ONLY valid JSON in this structure:
   "buyer": {
     "name": "string or null",
     "tin": "string or null",
+    "registrationNumber": "string or null",
+    "identificationNumber": "string or null (MyKad/Passport/MyPR)",
+    "contactNumber": "string or null (phone with country code)",
+    "sstNumber": "string or null (use 'NA' if not registered)",
     "email": "string or null",
     "phone": "string or null",
     "address": {
       "line1": "string or null",
+      "line2": "string or null",
       "city": "string or null",
       "state": "string or null",
       "postalCode": "string or null"
@@ -206,8 +218,10 @@ Do not include markdown formatting or explanations. Return only the JSON object.
       vendor = PartyInfoDraft(
         name: vendorData['name'] as String?,
         tin: vendorData['tin'] as String?,
-        registrationNumber: vendorData['registrationNumber'] as String? ?? 
-                           vendorData['sstNumber'] as String?,
+        registrationNumber: vendorData['registrationNumber'] as String?,
+        identificationNumber: vendorData['identificationNumber'] as String?,
+        contactNumber: vendorData['contactNumber'] as String? ?? vendorData['phone'] as String?,
+        sstNumber: vendorData['sstNumber'] as String?,
         email: vendorData['email'] as String?,
         phone: vendorData['phone'] as String?,
         address: addressData != null
@@ -232,11 +246,16 @@ Do not include markdown formatting or explanations. Return only the JSON object.
       buyer = PartyInfoDraft(
         name: buyerData['name'] as String?,
         tin: buyerData['tin'] as String?,
+        registrationNumber: buyerData['registrationNumber'] as String?,
+        identificationNumber: buyerData['identificationNumber'] as String?,
+        contactNumber: buyerData['contactNumber'] as String? ?? buyerData['phone'] as String?,
+        sstNumber: buyerData['sstNumber'] as String?,
         email: buyerData['email'] as String?,
         phone: buyerData['phone'] as String?,
         address: addressData != null
             ? AddressDraft(
                 line1: addressData['line1'] as String?,
+                line2: addressData['line2'] as String?,
                 city: addressData['city'] as String?,
                 state: addressData['state'] as String?,
                 postalCode: addressData['postalCode'] as String?,
