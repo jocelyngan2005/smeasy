@@ -1,24 +1,20 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/customer_model.dart';
 import '../backend/invoice/models/invoice_model.dart';
 
 class CustomerService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // Mock in-memory storage (replace with Firebase later)
+  static final List<Customer> _mockCustomers = [];
 
   /// Get all customers for the current user
   Future<List<Customer>> getCustomers({String? userId}) async {
     if (userId == null) return [];
 
     try {
-      final snapshot = await _firestore
-          .collection('customers')
-          .where('createdBy', isEqualTo: userId)
-          .orderBy('name')
-          .get();
-
-      return snapshot.docs
-          .map((doc) => Customer.fromJson({...doc.data(), 'id': doc.id}))
-          .toList();
+      await Future.delayed(const Duration(milliseconds: 100)); // Simulate network delay
+      return _mockCustomers
+          .where((c) => c.createdBy == userId)
+          .toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
     } catch (e) {
       print('Error fetching customers: $e');
       return [];
@@ -51,9 +47,11 @@ class CustomerService {
   /// Get a single customer by ID
   Future<Customer?> getCustomer(String customerId) async {
     try {
-      final doc = await _firestore.collection('customers').doc(customerId).get();
-      if (!doc.exists) return null;
-      return Customer.fromJson({...doc.data()!, 'id': doc.id});
+      await Future.delayed(const Duration(milliseconds: 50));
+      return _mockCustomers.firstWhere(
+        (c) => c.id == customerId,
+        orElse: () => throw Exception('Customer not found'),
+      );
     } catch (e) {
       print('Error fetching customer: $e');
       return null;
@@ -63,9 +61,12 @@ class CustomerService {
   /// Create a new customer
   Future<Customer?> createCustomer(Customer customer) async {
     try {
-      final docRef = await _firestore.collection('customers').add(customer.toJson());
-      final doc = await docRef.get();
-      return Customer.fromJson({...doc.data()!, 'id': doc.id});
+      await Future.delayed(const Duration(milliseconds: 100));
+      final newCustomer = customer.copyWith(
+        id: 'cust_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      _mockCustomers.add(newCustomer);
+      return newCustomer;
     } catch (e) {
       print('Error creating customer: $e');
       return null;
@@ -75,11 +76,13 @@ class CustomerService {
   /// Update an existing customer
   Future<bool> updateCustomer(Customer customer) async {
     try {
-      await _firestore
-          .collection('customers')
-          .doc(customer.id)
-          .update(customer.copyWith(updatedAt: DateTime.now()).toJson());
-      return true;
+      await Future.delayed(const Duration(milliseconds: 100));
+      final index = _mockCustomers.indexWhere((c) => c.id == customer.id);
+      if (index != -1) {
+        _mockCustomers[index] = customer.copyWith(updatedAt: DateTime.now());
+        return true;
+      }
+      return false;
     } catch (e) {
       print('Error updating customer: $e');
       return false;
@@ -89,7 +92,8 @@ class CustomerService {
   /// Delete a customer
   Future<bool> deleteCustomer(String customerId) async {
     try {
-      await _firestore.collection('customers').doc(customerId).delete();
+      await Future.delayed(const Duration(milliseconds: 100));
+      _mockCustomers.removeWhere((c) => c.id == customerId);
       return true;
     } catch (e) {
       print('Error deleting customer: $e');
@@ -100,11 +104,16 @@ class CustomerService {
   /// Toggle favorite status
   Future<bool> toggleFavorite(String customerId, bool isFavorite) async {
     try {
-      await _firestore.collection('customers').doc(customerId).update({
-        'isFavorite': isFavorite,
-        'updatedAt': DateTime.now().toIso8601String(),
-      });
-      return true;
+      await Future.delayed(const Duration(milliseconds: 50));
+      final index = _mockCustomers.indexWhere((c) => c.id == customerId);
+      if (index != -1) {
+        _mockCustomers[index] = _mockCustomers[index].copyWith(
+          isFavorite: isFavorite,
+          updatedAt: DateTime.now(),
+        );
+        return true;
+      }
+      return false;
     } catch (e) {
       print('Error toggling favorite: $e');
       return false;
@@ -116,16 +125,11 @@ class CustomerService {
     if (userId == null) return [];
 
     try {
-      final snapshot = await _firestore
-          .collection('customers')
-          .where('createdBy', isEqualTo: userId)
-          .where('isFavorite', isEqualTo: true)
-          .orderBy('name')
-          .get();
-
-      return snapshot.docs
-          .map((doc) => Customer.fromJson({...doc.data(), 'id': doc.id}))
-          .toList();
+      await Future.delayed(const Duration(milliseconds: 100));
+      return _mockCustomers
+          .where((c) => c.createdBy == userId && c.isFavorite)
+          .toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
     } catch (e) {
       print('Error fetching favorite customers: $e');
       return [];
@@ -137,16 +141,12 @@ class CustomerService {
     if (userId == null) return [];
 
     try {
-      final snapshot = await _firestore
-          .collection('customers')
-          .where('createdBy', isEqualTo: userId)
-          .orderBy('totalRevenue', descending: true)
-          .limit(limit)
-          .get();
-
-      return snapshot.docs
-          .map((doc) => Customer.fromJson({...doc.data(), 'id': doc.id}))
-          .toList();
+      await Future.delayed(const Duration(milliseconds: 100));
+      final customers = _mockCustomers
+          .where((c) => c.createdBy == userId)
+          .toList()
+        ..sort((a, b) => b.totalRevenue.compareTo(a.totalRevenue));
+      return customers.take(limit).toList();
     } catch (e) {
       print('Error fetching top customers: $e');
       return [];
@@ -162,12 +162,15 @@ class CustomerService {
       final customer = await getCustomer(customerId);
       if (customer == null) return;
 
-      await _firestore.collection('customers').doc(customerId).update({
-        'invoiceCount': customer.invoiceCount + 1,
-        'totalRevenue': customer.totalRevenue + invoiceAmount,
-        'lastInvoiceDate': DateTime.now().toIso8601String(),
-        'updatedAt': DateTime.now().toIso8601String(),
-      });
+      final index = _mockCustomers.indexWhere((c) => c.id == customerId);
+      if (index != -1) {
+        _mockCustomers[index] = customer.copyWith(
+          invoiceCount: customer.invoiceCount + 1,
+          totalRevenue: customer.totalRevenue + invoiceAmount,
+          lastInvoiceDate: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+      }
     } catch (e) {
       print('Error updating customer stats: $e');
     }
@@ -292,17 +295,12 @@ class CustomerService {
     if (userId == null) return [];
 
     try {
-      final snapshot = await _firestore
-          .collection('customers')
-          .where('createdBy', isEqualTo: userId)
-          .where('lastInvoiceDate', isNull: false)
-          .orderBy('lastInvoiceDate', descending: true)
-          .limit(limit)
-          .get();
-
-      return snapshot.docs
-          .map((doc) => Customer.fromJson({...doc.data(), 'id': doc.id}))
-          .toList();
+      await Future.delayed(const Duration(milliseconds: 100));
+      final customers = _mockCustomers
+          .where((c) => c.createdBy == userId && c.lastInvoiceDate != null)
+          .toList()
+        ..sort((a, b) => b.lastInvoiceDate!.compareTo(a.lastInvoiceDate!));
+      return customers.take(limit).toList();
     } catch (e) {
       print('Error fetching recent customers: $e');
       return [];
