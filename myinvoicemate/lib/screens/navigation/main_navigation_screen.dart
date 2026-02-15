@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../home/home_screen.dart';
 import '../invoices/invoice_list_screen.dart';
-import '../compliance/compliance_dashboard_screen.dart';
+import '../customers/customers_screen.dart';
 import '../profile/profile_screen.dart';
 import '../create/create_invoice_screen.dart';
 import '../../utils/constants.dart';
@@ -19,7 +19,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final List<Widget> _screens = [
     const HomeScreen(),
     const InvoiceListScreen(),
-    const ComplianceDashboardScreen(),
+    const CustomersScreen(),
     const ProfileScreen(),
   ];
 
@@ -68,9 +68,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ),
               const SizedBox(width: 40), // Space for FAB
               _buildNavItem(
-                Icons.verified_outlined,
-                Icons.verified,
-                'Compliance',
+                Icons.people_outline,
+                Icons.people,
+                'Customers',
                 2,
               ),
               _buildNavItem(Icons.person_outline, Icons.person, 'Profile', 3),

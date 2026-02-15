@@ -27,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
   double _complianceScore = 0;
   AnalyticsData? _analyticsData;
   int _touchedIndex = -1;
+  List<String> _recommendations = [];
 
   @override
   void initState() {
@@ -40,12 +41,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final stats = await _complianceService.getComplianceStats();
       final invoices = await _invoiceService.getInvoices();
       final analytics = await _analyticsService.getAnalytics();
+      final recommendations = await _complianceService.getComplianceRecommendations();
 
       setState(() {
         _pendingInvoices = stats.pendingSubmissions;
         _totalInvoices = invoices.length;
         _complianceScore = stats.complianceScore;
         _analyticsData = analytics;
+        _recommendations = recommendations;
         _isLoading = false;
       });
     } catch (e) {
@@ -128,6 +131,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildSectionTitle('Top Customers'),
                 const SizedBox(height: 12),
                 _buildTopCustomers(),
+                const SizedBox(height: 24),
+
+                // Recommendations
+                if (_recommendations.isNotEmpty) ...[
+                  _buildSectionTitle('Recommendations'),
+                  const SizedBox(height: 12),
+                  _buildRecommendationsCard(),
+                ],
               ],
             ],
           ),
@@ -257,7 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Sales Trend',
+                'Net Cash Flow',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 20,
@@ -562,6 +573,40 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     '${percentage.toStringAsFixed(1)}% of total revenue',
                     style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecommendationsCard() {
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: _recommendations.map((recommendation) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.lightbulb_outline,
+                    color: Colors.amber,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      recommendation,
+                      style: const TextStyle(fontSize: 14),
+                    ),
                   ),
                 ],
               ),
