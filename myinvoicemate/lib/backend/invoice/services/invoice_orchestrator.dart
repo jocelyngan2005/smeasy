@@ -12,14 +12,14 @@ import 'firestore_invoice_service.dart';
 class InvoiceGenerationOrchestrator {
   final GeminiInvoiceService _geminiInvoiceService;
   final GeminiVisionReceiptService _geminiVisionService;
-  final FirestoreInvoiceService _firestoreService;
+  final FirestoreInvoiceService? _firestoreService;
   final Uuid _uuid = const Uuid();
 
   InvoiceGenerationOrchestrator({
     FirestoreInvoiceService? firestoreService,
   })  : _geminiInvoiceService = GeminiInvoiceService(),
         _geminiVisionService = GeminiVisionReceiptService(),
-        _firestoreService = firestoreService ?? FirestoreInvoiceService();
+        _firestoreService = firestoreService;
 
   // ==================== VOICE/TEXT TO INVOICE ====================
 
@@ -40,8 +40,13 @@ class InvoiceGenerationOrchestrator {
 
       // Step 2: Save draft to Firestore if requested
       String? draftId;
-      if (saveDraft) {
-        draftId = await _firestoreService.saveDraft(draft, userId);
+      if (saveDraft && _firestoreService != null) {
+        try {
+          draftId = await _firestoreService!.saveDraft(draft, userId);
+        } catch (e) {
+          // Firestore not available, continue without saving
+          print('Warning: Could not save draft to Firestore: $e');
+        }
       }
 
       return InvoiceGenerationResult(
@@ -75,7 +80,14 @@ class InvoiceGenerationOrchestrator {
       );
 
       // Save refined draft
-      final draftId = await _firestoreService.saveDraft(refinedDraft, userId);
+      String? draftId;
+      if (_firestoreService != null) {
+        try {
+          draftId = await _firestoreService!.saveDraft(refinedDraft, userId);
+        } catch (e) {
+          print('Warning: Could not save draft to Firestore: $e');
+        }
+      }
 
       return InvoiceGenerationResult(
         draft: refinedDraft,
@@ -110,8 +122,13 @@ class InvoiceGenerationOrchestrator {
 
       // Save draft if requested
       String? draftId;
-      if (saveDraft) {
-        draftId = await _firestoreService.saveDraft(draft, userId);
+      if (saveDraft && _firestoreService != null) {
+        try {
+          draftId = await _firestoreService!.saveDraft(draft, userId);
+        } catch (e) {
+          // Firestore not available, continue without saving
+          print('Warning: Could not save draft to Firestore: $e');
+        }
       }
 
       return InvoiceGenerationResult(
@@ -147,8 +164,12 @@ class InvoiceGenerationOrchestrator {
 
       // Save draft if requested
       String? draftId;
-      if (saveDraft) {
-        draftId = await _firestoreService.saveDraft(draft, userId);
+      if (saveDraft && _firestoreService != null) {
+        try {
+          draftId = await _firestoreService!.saveDraft(draft, userId);
+        } catch (e) {
+          print('Warning: Could not save draft to Firestore: $e');
+        }
       }
 
       return InvoiceGenerationResult(
@@ -224,7 +245,13 @@ class InvoiceGenerationOrchestrator {
       );
 
       // Save to Firestore
-      await _firestoreService.saveInvoice(invoice);
+      if (_firestoreService != null) {
+        try {
+          await _firestoreService!.saveInvoice(invoice);
+        } catch (e) {
+          print('Warning: Could not save invoice to Firestore: $e');
+        }
+      }
 
       return InvoiceFinalizationResult(
         success: true,
@@ -268,11 +295,17 @@ class InvoiceGenerationOrchestrator {
       final mockReferenceId = 'MYINV-${DateTime.now().millisecondsSinceEpoch}';
 
       // Update invoice status
-      await _firestoreService.updateComplianceStatus(
-        invoiceId: invoice.id,
-        status: ComplianceStatus.submitted,
-        myInvoisReferenceId: mockReferenceId,
-      );
+      if (_firestoreService != null) {
+        try {
+          await _firestoreService!.updateComplianceStatus(
+            invoiceId: invoice.id,
+            status: ComplianceStatus.submitted,
+            myInvoisReferenceId: mockReferenceId,
+          );
+        } catch (e) {
+          print('Warning: Could not update status in Firestore: $e');
+        }
+      }
 
       return SubmissionResult(
         success: true,
@@ -323,22 +356,46 @@ class InvoiceGenerationOrchestrator {
 
   /// Get draft by ID
   Future<InvoiceDraft?> getDraft(String draftId) async {
-    return await _firestoreService.getDraft(draftId);
+    if (_firestoreService == null) return null;
+    try {
+      return await _firestoreService!.getDraft(draftId);
+    } catch (e) {
+      print('Warning: Could not get draft from Firestore: $e');
+      return null;
+    }
   }
 
   /// Get invoice by ID
   Future<Invoice?> getInvoice(String invoiceId) async {
-    return await _firestoreService.getInvoice(invoiceId);
+    if (_firestoreService == null) return null;
+    try {
+      return await _firestoreService!.getInvoice(invoiceId);
+    } catch (e) {
+      print('Warning: Could not get invoice from Firestore: $e');
+      return null;
+    }
   }
 
   /// List user's drafts
   Future<List<InvoiceDraft>> listDrafts(String userId) async {
-    return await _firestoreService.getDraftsByUser(userId);
+    if (_firestoreService == null) return [];
+    try {
+      return await _firestoreService!.getDraftsByUser(userId);
+    } catch (e) {
+      print('Warning: Could not list drafts from Firestore: $e');
+      return [];
+    }
   }
 
   /// List user's invoices
   Future<List<Invoice>> listInvoices(String userId) async {
-    return await _firestoreService.getInvoicesByUser(userId);
+    if (_firestoreService == null) return [];
+    try {
+      return await _firestoreService!.getInvoicesByUser(userId);
+    } catch (e) {
+      print('Warning: Could not list invoices from Firestore: $e');
+      return [];
+    }
   }
 }
 

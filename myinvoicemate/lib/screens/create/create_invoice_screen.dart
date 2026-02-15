@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import '../../services/gemini_service.dart';
 import '../../services/invoice_service.dart';
 import '../../backend/invoice/models/invoice_model.dart';
 import '../../backend/invoice/models/invoice_adapter.dart';
+import '../../backend/invoice/models/invoice_draft.dart';
+import '../../backend/invoice/services/invoice_orchestrator.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../invoices/invoice_detail_screen.dart';
@@ -18,7 +19,7 @@ class CreateInvoiceScreen extends StatefulWidget {
 }
 
 class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
-  final _geminiService = GeminiService();
+  final _orchestrator = InvoiceGenerationOrchestrator();
   final _invoiceService = InvoiceService();
 
   late stt.SpeechToText _speech;
@@ -101,7 +102,19 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
 
   // Voice Invoice Methods
   Future<void> _startListening() async {
-    bool available = await _speech.initialize();
+    bool available = await _speech.initialize(
+      onError: (error) {
+        print('Speech recognition error: $error');
+        setState(() => _isListening = false);
+      },
+      onStatus: (status) {
+        print('Speech recognition status: $status');
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _isListening = false);
+        }
+      },
+    );
+    
     if (available) {
       setState(() => _isListening = true);
       _speech.listen(
@@ -111,6 +124,11 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
             _textController.text = _transcription;
           });
         },
+        listenFor: const Duration(seconds: 30), // Listen for up to 30 seconds
+        pauseFor: const Duration(seconds: 5), // Wait 5 seconds of silence before stopping
+        partialResults: true, // Show results as user speaks
+        cancelOnError: false, // Don't stop on minor errors
+        listenMode: stt.ListenMode.confirmation, // Keep listening
       );
     } else {
       Helpers.showErrorSnackbar(context, 'Voice recognition not available');
@@ -152,16 +170,85 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     _scrollToBottom();
 
     try {
-      final invoice = await _geminiService.generateInvoiceFromVoice(
-        userMessage,
-      );
+      InvoiceGenerationResult result;
+      
+      // Process based on input type
+      if (attachedImage != null) {
+        // Receipt scanning with Gemini Vision
+        result = await _orchestrator.generateFromReceiptFile(
+          imageFile: attachedImage,
+          userId: 'user123', // TODO: Replace with actual user ID from auth
+          saveDraft: false, // Disable Firestore for testing
+        );
+      } else {
+        // Voice/text input with Gemini AI
+        result = await _orchestrator.generateFromVoiceOrText(
+          input: userMessage,
+          userId: 'user123', // TODO: Replace with actual user ID from auth
+          saveDraft: false, // Disable Firestore for testing
+        );
+      }
 
-      if (mounted) {
+      if (mounted && result.draft != null) {
+        // Try to convert draft to invoice for preview
+        Invoice? invoice;
+        
+        try {
+          // Only convert if draft is ready, otherwise create a placeholder invoice
+          if (result.draft!.isReadyForFinalization) {
+            invoice = result.draft!.toInvoice(
+              id: 'preview_${DateTime.now().millisecondsSinceEpoch}',
+              createdBy: 'user123',
+            );
+          } else {
+            // Create a placeholder invoice for preview with available data
+            invoice = _createPlaceholderInvoice(result.draft!);
+          }
+        } catch (e) {
+          print('Error converting draft to invoice: $e');
+          // Create placeholder invoice as fallback
+          invoice = _createPlaceholderInvoice(result.draft!);
+        }
+
         setState(() {
           // Remove loading message
           _messages.removeWhere((msg) => msg['type'] == 'loading');
+          
+          // Add AI response with metadata
+          final responseText = StringBuffer();
+          responseText.writeln(result.message);
+          
+          // Add confidence score
+          if (result.draft!.confidenceScore != null) {
+            final confidence = (result.draft!.confidenceScore! * 100).toStringAsFixed(0);
+            responseText.writeln('\n🎯 Confidence: $confidence%');
+          }
+          
+          // Add extraction source
+          if (attachedImage != null) {
+            final ocrQuality = result.draft!.extractedEntities?.last ?? 'unknown';
+            responseText.writeln('📸 OCR Quality: $ocrQuality');
+          }
+          
+          // Add warnings if any
+          if (result.draft!.warnings.isNotEmpty) {
+            responseText.writeln('\n⚠️ Warnings:');
+            for (var warning in result.draft!.warnings) {
+              responseText.writeln('  • $warning');
+            }
+          }
+          
+          // Add missing fields if any
+          if (result.draft!.missingFields.isNotEmpty) {
+            responseText.writeln('\n📝 Missing fields:');
+            for (var field in result.draft!.missingFields) {
+              responseText.writeln('  • $field');
+            }
+          }
+          
           _messages.add({
             'type': 'assistant',
+            'text': responseText.toString(),
             'invoice': invoice,
             'timestamp': DateTime.now(),
           });
@@ -170,6 +257,8 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
         });
 
         _scrollToBottom();
+      } else {
+        throw Exception('No draft generated');
       }
     } catch (e) {
       if (mounted) {
@@ -178,7 +267,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
           _messages.removeWhere((msg) => msg['type'] == 'loading');
           _messages.add({
             'type': 'error',
-            'text': 'Failed to generate invoice. Please try again.',
+            'text': 'Failed to generate invoice: ${e.toString()}\n\nPlease try again or provide more details.',
             'timestamp': DateTime.now(),
           });
           _isProcessing = false;
@@ -243,6 +332,66 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     } catch (e) {
       Helpers.showErrorSnackbar(context, 'Failed to pick image');
     }
+  }
+
+  /// Create a placeholder invoice from incomplete draft data
+  Invoice _createPlaceholderInvoice(InvoiceDraft draft) {
+    // Use adapter to create invoice from partial data
+    return InvoiceBuilder.fromSimpleData(
+      id: 'preview_${DateTime.now().millisecondsSinceEpoch}',
+      invoiceNumber: draft.invoiceNumber ?? 'DRAFT-${DateTime.now().millisecondsSinceEpoch}',
+      sellerId: draft.vendor?.name ?? '',
+      sellerName: draft.vendor?.name ?? '[Vendor Name Missing]',
+      sellerTin: draft.vendor?.tin ?? '',
+      sellerIdentificationNumber: draft.vendor?.identificationNumber ?? '',
+      sellerContactNumber: draft.vendor?.contactNumber ?? draft.vendor?.phone ?? '',
+      sellerSstNumber: draft.vendor?.sstNumber ?? '',
+      sellerEmail: draft.vendor?.email ?? '',
+      sellerAddress1: draft.vendor?.address?.line1 ?? '',
+      sellerAddress2: draft.vendor?.address?.line2 ?? '',
+      sellerCity: draft.vendor?.address?.city ?? '',
+      sellerState: draft.vendor?.address?.state ?? '',
+      sellerPostalCode: draft.vendor?.address?.postalCode ?? '',
+      buyerId: draft.buyer?.name ?? '',
+      buyerName: draft.buyer?.name ?? '[Buyer Name Missing]',
+      buyerTin: draft.buyer?.tin ?? '',
+      buyerIdentificationNumber: draft.buyer?.identificationNumber ?? '',
+      buyerContactNumber: draft.buyer?.contactNumber ?? draft.buyer?.phone ?? '',
+      buyerSstNumber: draft.buyer?.sstNumber ?? '',
+      buyerEmail: draft.buyer?.email ?? '',
+      buyerAddress1: draft.buyer?.address?.line1 ?? '',
+      buyerAddress2: draft.buyer?.address?.line2 ?? '',
+      buyerCity: draft.buyer?.address?.city ?? '',
+      buyerState: draft.buyer?.address?.state ?? '',
+      buyerPostalCode: draft.buyer?.address?.postalCode ?? '',
+      issueDate: draft.issueDate ?? DateTime.now(),
+      dueDate: draft.dueDate,
+      lineItems: draft.lineItems.map((item) {
+        final lineSubtotal = item.quantity * item.unitPrice;
+        final lineTaxAmount = item.taxRate != null 
+            ? lineSubtotal * (item.taxRate! / 100) 
+            : 0.0;
+        
+        return InvoiceLineItem(
+          id: item.id,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitPrice: item.unitPrice,
+          subtotal: lineSubtotal,
+          taxRate: item.taxRate,
+          taxAmount: lineTaxAmount,
+          totalAmount: lineSubtotal + lineTaxAmount,
+          taxType: item.taxType,
+        );
+      }).toList(),
+      subtotal: draft.subtotal ?? 0.0,
+      taxAmount: draft.taxAmount ?? 0.0,
+      totalAmount: draft.totalAmount ?? 0.0,
+      status: 'draft',
+      createdBy: 'user123',
+      source: draft.source,
+    );
   }
 
   Future<void> _saveInvoice() async {
