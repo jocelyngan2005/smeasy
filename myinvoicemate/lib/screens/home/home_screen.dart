@@ -8,7 +8,7 @@ import '../../services/analytics_service.dart';
 import '../../models/analytics_model.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
-import '../compliance/compliance_dashboard_screen.dart';
+import '../notifications/notification_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -97,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const ComplianceDashboardScreen(),
+                          builder: (_) => const NotificationScreen(),
                         ),
                       );
                     },
