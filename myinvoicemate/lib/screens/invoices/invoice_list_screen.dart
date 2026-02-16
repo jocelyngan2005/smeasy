@@ -15,15 +15,32 @@ class InvoiceListScreen extends StatefulWidget {
 
 class _InvoiceListScreenState extends State<InvoiceListScreen> {
   final _invoiceService = InvoiceService();
+  final _searchController = TextEditingController();
   List<Invoice> _invoices = [];
   List<Invoice> _filteredInvoices = [];
   bool _isLoading = true;
   String _filterStatus = 'all';
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onSearchChanged);
     _loadInvoices();
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text;
+      _applyFilter();
+    });
   }
 
   Future<void> _loadInvoices() async {
@@ -42,13 +59,26 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
   }
 
   void _applyFilter() {
-    if (_filterStatus == 'all') {
-      _filteredInvoices = _invoices;
-    } else {
-      _filteredInvoices = _invoices
+    List<Invoice> filtered = _invoices;
+
+    // Apply status filter
+    if (_filterStatus != 'all') {
+      filtered = filtered
           .where((inv) => inv.status.toLowerCase() == _filterStatus)
           .toList();
     }
+
+    // Apply search filter
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      filtered = filtered.where((inv) {
+        return inv.invoiceNumber.toLowerCase().contains(query) ||
+            inv.buyerName.toLowerCase().contains(query) ||
+            inv.buyerTin.toLowerCase().contains(query);
+      }).toList();
+    }
+
+    _filteredInvoices = filtered;
   }
 
   @override
@@ -62,26 +92,99 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
         title: const Text('Invoices', style: TextStyle(color: Colors.black)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: _showFilterDialog,
+            icon: const Icon(Icons.add),
+            onPressed: () {
+              // TODO: Implement add invoice manually functionality
+              Helpers.showErrorSnackbar(context, 'Add invoice manually feature coming soon');
+            },
+            tooltip: 'Add Invoice',
           ),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadInvoices,
-              child: _filteredInvoices.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _filteredInvoices.length,
-                      itemBuilder: (context, index) {
-                        final invoice = _filteredInvoices[index];
-                        return _buildInvoiceCard(invoice);
-                      },
-                    ),
+          : Column(
+              children: [
+                _buildSearchBar(),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _loadInvoices,
+                    child: _filteredInvoices.isEmpty
+                        ? _buildEmptyState()
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _filteredInvoices.length,
+                            itemBuilder: (context, index) {
+                              final invoice = _filteredInvoices[index];
+                              return _buildInvoiceCard(invoice);
+                            },
+                          ),
+                  ),
+                ),
+              ],
             ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search invoices...',
+                hintStyle: TextStyle(color: Colors.grey[500]),
+                prefixIcon: Icon(Icons.search, color: Colors.grey[500]),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.primary, AppColors.primaryDark],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.filter_list, color: Colors.white),
+              onPressed: _showFilterDialog,
+              tooltip: 'Filter',
+            ),
+          ),
+        ],
+      ),
     );
   }
 

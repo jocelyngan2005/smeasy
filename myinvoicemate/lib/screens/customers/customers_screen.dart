@@ -21,7 +21,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
   List<Customer> _customers = [];
   List<Customer> _filteredCustomers = [];
   bool _isLoading = true;
-  bool _showFavoritesOnly = false;
 
   @override
   void initState() {
@@ -61,8 +60,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
     final query = _searchController.text.toLowerCase();
     setState(() {
       _filteredCustomers = _customers.where((customer) {
-        if (_showFavoritesOnly && !customer.isFavorite) return false;
-
         if (query.isEmpty) return true;
 
         return customer.name.toLowerCase().contains(query) ||
@@ -70,13 +67,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
             (customer.identificationNumber?.toLowerCase().contains(query) ?? false) ||
             (customer.email?.toLowerCase().contains(query) ?? false);
       }).toList();
-    });
-  }
-
-  void _toggleFavoritesFilter() {
-    setState(() {
-      _showFavoritesOnly = !_showFavoritesOnly;
-      _filterCustomers();
     });
   }
 
@@ -106,12 +96,19 @@ class _CustomersScreenState extends State<CustomersScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(
-              _showFavoritesOnly ? Icons.star : Icons.star_border,
-              color: _showFavoritesOnly ? Colors.amber : Colors.grey,
-            ),
-            onPressed: _toggleFavoritesFilter,
-            tooltip: 'Show favorites only',
+            icon: const Icon(Icons.add),
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AddCustomerScreen(),
+                ),
+              );
+              if (result == true) {
+                _loadCustomers();
+              }
+            },
+            tooltip: 'Add Customer',
           ),
         ],
       ),
@@ -150,27 +147,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
           // Customer Count
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${_filteredCustomers.length} customer${_filteredCustomers.length != 1 ? 's' : ''}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                if (_showFavoritesOnly)
-                  Chip(
-                    label: const Text(
-                      'Favorites',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    backgroundColor: Colors.amber.withOpacity(0.2),
-                    deleteIcon: const Icon(Icons.close, size: 16),
-                    onDeleted: _toggleFavoritesFilter,
-                  ),
-              ],
+            child: Text(
+              '${_filteredCustomers.length} customer${_filteredCustomers.length != 1 ? 's' : ''}',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -194,22 +176,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const AddCustomerScreen(),
-            ),
-          );
-          if (result == true) {
-            _loadCustomers();
-          }
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Add Customer'),
-        backgroundColor: AppColors.primary,
-      ),
     );
   }
 
@@ -219,7 +185,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            _searchController.text.isNotEmpty || _showFavoritesOnly
+            _searchController.text.isNotEmpty
                 ? Icons.search_off
                 : Icons.people_outline,
             size: 80,
@@ -229,9 +195,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
           Text(
             _searchController.text.isNotEmpty
                 ? 'No customers found'
-                : _showFavoritesOnly
-                    ? 'No favorite customers'
-                    : 'No customers yet',
+                : 'No customers yet',
             style: TextStyle(
               fontSize: 18,
               color: Colors.grey[600],
@@ -240,8 +204,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            _searchController.text.isNotEmpty || _showFavoritesOnly
-                ? 'Try a different search or filter'
+            _searchController.text.isNotEmpty
+                ? 'Try a different search'
                 : 'Add your first customer to get started',
             style: TextStyle(
               fontSize: 14,
