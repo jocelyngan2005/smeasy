@@ -127,18 +127,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildStatusChart(),
                 const SizedBox(height: 24),
 
+                // Recommendations
+                if (_recommendations.isNotEmpty) ...[
+                  _buildRecommendationsCard(),
+                  const SizedBox(height: 24),
+                ],
+
                 // Top Customers
                 _buildSectionTitle('Top Customers'),
                 const SizedBox(height: 12),
                 _buildTopCustomers(),
-                const SizedBox(height: 24),
-
-                // Recommendations
-                if (_recommendations.isNotEmpty) ...[
-                  _buildSectionTitle('Recommendations'),
-                  const SizedBox(height: 12),
-                  _buildRecommendationsCard(),
-                ],
               ],
             ],
           ),
@@ -584,13 +582,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRecommendationsCard() {
-    return Card(
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: _recommendations.map((recommendation) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF2E3193).withOpacity(0.1),
+        border: Border.all(
+          color: const Color(0xFF2E3193),
+          width: 2,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Recommendations',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2E3193),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ..._recommendations.map((recommendation) {
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(
@@ -605,14 +619,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: Text(
                       recommendation,
-                      style: const TextStyle(fontSize: 14),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF2E3193),
+                      ),
                     ),
                   ),
                 ],
               ),
             );
           }).toList(),
-        ),
+        ],
       ),
     );
   }

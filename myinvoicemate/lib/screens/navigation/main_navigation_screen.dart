@@ -3,7 +3,7 @@ import '../home/home_screen.dart';
 import '../invoices/invoice_list_screen.dart';
 import '../customers/customers_screen.dart';
 import '../profile/profile_screen.dart';
-import '../create/ai_assistant_screen.dart';
+import '../assistant/ai_assistant_screen.dart';
 import '../../utils/constants.dart';
 
 class MainNavigationScreen extends StatefulWidget {
