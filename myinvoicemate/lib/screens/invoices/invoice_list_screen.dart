@@ -5,6 +5,7 @@ import '../../backend/invoice/services/invoice_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import 'invoice_detail_screen.dart';
+import 'invoice_create_screen.dart';
 
 class InvoiceListScreen extends StatefulWidget {
   const InvoiceListScreen({super.key});
@@ -93,9 +94,16 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () {
-              // TODO: Implement add invoice manually functionality
-              Helpers.showErrorSnackbar(context, 'Add invoice manually feature coming soon');
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const InvoiceCreateScreen(),
+                ),
+              );
+              if (result == true) {
+                _loadInvoices();
+              }
             },
             tooltip: 'Add Invoice',
           ),
