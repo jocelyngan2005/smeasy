@@ -7,6 +7,7 @@ import '../../backend/invoice/models/invoice_model.dart';
 import '../../backend/invoice/models/invoice_adapter.dart';
 import '../../backend/invoice/models/invoice_draft.dart';
 import '../../backend/invoice/services/invoice_orchestrator.dart';
+import '../../backend/knowledge_assistant/services/knowledge_assistant_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../invoices/invoice_detail_screen.dart';
@@ -21,6 +22,7 @@ class AIAssistantScreen extends StatefulWidget {
 class _AIAssistantScreenState extends State<AIAssistantScreen> {
   final _orchestrator = InvoiceGenerationOrchestrator();
   final _invoiceService = InvoiceService();
+  final _knowledgeAssistant = KnowledgeAssistantService();
 
   late stt.SpeechToText _speech;
   bool _isListening = false;
@@ -169,6 +171,139 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
 
     _scrollToBottom();
 
+    try {
+      // Detect if this is a compliance question or invoice generation
+      final isComplianceQuestion = _isComplianceQuestion(userMessage);
+      
+      if (isComplianceQuestion && attachedImage == null) {
+        // Handle compliance question with Knowledge Assistant
+        await _handleComplianceQuestion(userMessage);
+      } else {
+        // Handle invoice generation
+        await _handleInvoiceGeneration(userMessage, attachedImage);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          // Remove loading message
+          _messages.removeWhere((msg) => msg['type'] == 'loading');
+          _messages.add({
+            'type': 'error',
+            'text': 'An error occurred: ${e.toString()}\n\nPlease try again.',
+            'timestamp': DateTime.now(),
+          });
+          _isProcessing = false;
+        });
+        _scrollToBottom();
+      }
+    }
+  }
+
+  /// Detect if user input is a compliance question vs invoice creation
+  bool _isComplianceQuestion(String input) {
+    final lower = input.toLowerCase();
+    
+    // Question indicators
+    final questionWords = ['what', 'how', 'when', 'why', 'can i', 'should i', 'do i need', 'is it', 'are there', 'explain'];
+    final hasQuestionWord = questionWords.any((word) => lower.contains(word));
+    
+    // Compliance keywords
+    final complianceKeywords = [
+      'compliance', 'lhdn', 'myinvois', 'rule', 'regulation', 'guideline',
+      'tin', 'sst', 'tax', 'penalty', 'deadline', 'submit', 'requirement',
+      'rm10', '10000', 'threshold', 'consolidat', 'relaxation', 'period',
+      'exempt', 'mandatory', 'legal', 'law', 'fine'
+    ];
+    final hasComplianceKeyword = complianceKeywords.any((keyword) => lower.contains(keyword));
+    
+    // Invoice creation indicators
+    final invoiceKeywords = ['create', 'generate', 'make', 'invoice for', 'bill for', 'charge'];
+    final hasInvoiceKeyword = invoiceKeywords.any((keyword) => lower.contains(keyword));
+    
+    // If it has question word and compliance keyword, likely a compliance question
+    if (hasQuestionWord && hasComplianceKeyword) {
+      return true;
+    }
+    
+    // If it has compliance keyword but no invoice keywords, likely compliance
+    if (hasComplianceKeyword && !hasInvoiceKeyword) {
+      return true;
+    }
+    
+    // If it explicitly asks about invoicing (not creation), treat as compliance
+    if (lower.contains('about invoic') || lower.contains('invoic rule') || 
+        lower.contains('invoic requir')) {
+      return true;
+    }
+    
+    // Default to invoice generation if unclear
+    return false;
+  }
+
+  /// Handle compliance questions using Knowledge Assistant
+  Future<void> _handleComplianceQuestion(String question) async {
+    try {
+      final complianceAnswer = await _knowledgeAssistant.askQuestion(question);
+      
+      if (mounted) {
+        setState(() {
+          // Remove loading message
+          _messages.removeWhere((msg) => msg['type'] == 'loading');
+          
+          // Build answer with metadata
+          final responseText = StringBuffer();
+          responseText.writeln(complianceAnswer.answer);
+          
+          // Add sources
+          if (complianceAnswer.sources.isNotEmpty) {
+            responseText.writeln('\n📚 **Sources:**');
+            for (var source in complianceAnswer.sources) {
+              responseText.writeln('  • $source');
+            }
+          }
+          
+          // Add related topics
+          if (complianceAnswer.relatedTopics.isNotEmpty) {
+            responseText.writeln('\n🔗 **Related Topics:**');
+            for (var topic in complianceAnswer.relatedTopics) {
+              responseText.writeln('  • $topic');
+            }
+          }
+          
+          // Add confidence
+          final confidence = (complianceAnswer.confidenceScore * 100).toStringAsFixed(0);
+          responseText.writeln('\n🎯 Confidence: $confidence%');
+          
+          _messages.add({
+            'type': 'compliance',
+            'text': responseText.toString(),
+            'category': complianceAnswer.category,
+            'timestamp': DateTime.now(),
+          });
+          _isProcessing = false;
+        });
+        
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          // Remove loading message
+          _messages.removeWhere((msg) => msg['type'] == 'loading');
+          _messages.add({
+            'type': 'error',
+            'text': 'Failed to get compliance answer: ${e.toString()}\n\nYou can also contact LHDN at 1-800-88-4567 for assistance.',
+            'timestamp': DateTime.now(),
+          });
+          _isProcessing = false;
+        });
+        _scrollToBottom();
+      }
+    }
+  }
+
+  /// Handle invoice generation using Invoice Orchestrator
+  Future<void> _handleInvoiceGeneration(String userMessage, File? attachedImage) async {
     try {
       InvoiceGenerationResult result;
       
@@ -666,6 +801,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     final isUser = message['type'] == 'user';
     final isError = message['type'] == 'error';
     final isLoading = message['type'] == 'loading';
+    final isCompliance = message['type'] == 'compliance';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -679,15 +815,17 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
+                gradient: LinearGradient(
+                  colors: isCompliance 
+                      ? [const Color(0xFF1A8B4A), const Color(0xFF2ECC71)]  // Green for compliance
+                      : [const Color(0xFF2E3193), const Color(0xFF0533F4)],  // Blue for invoice
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.auto_awesome,
+              child: Icon(
+                isCompliance ? Icons.school : Icons.auto_awesome,
                 size: 20,
                 color: Colors.white,
               ),
@@ -704,9 +842,16 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                           ? const Color(0xFF2E3193)
                           : isError
                           ? Colors.red[50]
+                          : isCompliance
+                          ? Colors.green[50]
                           : Colors.white,
                       border: !isUser && !isError
-                          ? Border.all(color: Colors.grey[300]!, width: 1)
+                          ? Border.all(
+                              color: isCompliance 
+                                  ? Colors.green[200]! 
+                                  : Colors.grey[300]!, 
+                              width: 1,
+                            )
                           : null,
                       borderRadius: BorderRadius.only(
                         topLeft: const Radius.circular(16),
@@ -727,6 +872,28 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Show category badge for compliance messages
+                        if (isCompliance && message['category'] != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green[700],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '📋 ${message['category']}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         if (message['image'] != null) ...[
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
