@@ -3,7 +3,7 @@ import '../home/home_screen.dart';
 import '../invoices/invoice_list_screen.dart';
 import '../customers/customers_screen.dart';
 import '../profile/profile_screen.dart';
-import '../create/create_invoice_screen.dart';
+import '../create/ai_assistant_screen.dart';
 import '../../utils/constants.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -40,7 +40,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const CreateInvoiceScreen()),
+              MaterialPageRoute(builder: (_) => const AIAssistantScreen()),
             );
           },
           backgroundColor: Colors.transparent,

@@ -11,14 +11,14 @@ import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../invoices/invoice_detail_screen.dart';
 
-class CreateInvoiceScreen extends StatefulWidget {
-  const CreateInvoiceScreen({super.key});
+class AIAssistantScreen extends StatefulWidget {
+  const AIAssistantScreen({super.key});
 
   @override
-  State<CreateInvoiceScreen> createState() => _CreateInvoiceScreenState();
+  State<AIAssistantScreen> createState() => _AIAssistantScreenState();
 }
 
-class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
+class _AIAssistantScreenState extends State<AIAssistantScreen> {
   final _orchestrator = InvoiceGenerationOrchestrator();
   final _invoiceService = InvoiceService();
 
@@ -435,7 +435,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
         elevation: 0,
         foregroundColor: Colors.black,
         title: const Text(
-          'Create Invoice',
+          'AI Assistant',
           style: TextStyle(color: Colors.black),
         ),
       ),
@@ -476,7 +476,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 40),
                           child: Text(
-                            'Describe your invoice or attach a receipt image, and I\'ll help you create it',
+                            'Create invoices, get answers to FAQs, or ask me anything about your business',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 14,
