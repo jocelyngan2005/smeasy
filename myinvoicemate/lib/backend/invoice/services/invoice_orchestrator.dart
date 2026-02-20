@@ -298,8 +298,8 @@ class InvoiceGenerationOrchestrator {
       if (_firestoreService != null) {
         try {
           await _firestoreService.updateComplianceStatus(
-            invoiceId: invoice.id,
-            status: ComplianceStatus.submitted,
+            invoice.id,
+            ComplianceStatus.submitted,
             myInvoisReferenceId: mockReferenceId,
           );
         } catch (e) {

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../backend/auth/services/auth_service.dart';
 import '../../backend/compliance/models/compliance_model.dart';
 import '../../backend/compliance/services/compliance_service.dart';
 import '../../utils/constants.dart';
@@ -25,7 +27,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Future<void> _loadAlerts() async {
     setState(() => _isLoading = true);
     try {
-      final alerts = await _complianceService.getComplianceAlerts();
+      final userId = context.read<AuthService>().currentUserId ?? '';
+      final alerts = await _complianceService.getComplianceAlerts(userId);
       
       setState(() {
         _alerts = alerts;

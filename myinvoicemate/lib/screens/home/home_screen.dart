@@ -38,10 +38,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadDashboardData() async {
     setState(() => _isLoading = true);
     try {
-      final stats = await _complianceService.getComplianceStats();
+      // Retrieve user ID from the auth service cache
+      final authService = context.read<AuthService>();
+      final userId = authService.currentUserId ?? '';
+
+      final stats = await _complianceService.getComplianceStats(userId);
       final invoices = await _invoiceService.getInvoices();
-      final analytics = await _analyticsService.getAnalytics();
-      final recommendations = await _complianceService.getComplianceRecommendations();
+      final analytics = await _analyticsService.getAnalytics(userId);
+      final recommendations = _complianceService.getComplianceRecommendations();
 
       setState(() {
         _pendingInvoices = stats.pendingSubmissions;

@@ -1,374 +1,373 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../firestore_collections.dart';
 import '../models/invoice_model.dart';
 import '../models/invoice_draft.dart';
 
-/// Mock service for managing invoices (in-memory storage until Firebase is configured)
+/// Real Firestore-backed service for /invoices and /invoice_drafts collections.
+///
+/// All invoices are user-isolated via the [createdBy] field (indexed in Firestore).
+/// Soft-delete is enforced: documents are never hard-deleted; [isDeleted] = true instead.
 class FirestoreInvoiceService {
-  // Mock in-memory storage
-  static final List<Invoice> _mockInvoices = [];
-  static final Map<String, _DraftWithMetadata> _mockDrafts = {};
-  
-  // Collection names
-  static const String invoicesCollection = 'invoices';
-  static const String draftsCollection = 'invoice_drafts';
-  static const String vendorsCollection = 'vendors';
-  static const String buyersCollection = 'buyers';
+  FirestoreInvoiceService({FirebaseFirestore? firestore})
+      : _db = firestore ?? FirebaseFirestore.instance;
 
-  FirestoreInvoiceService({dynamic firestore});
+  final FirebaseFirestore _db;
 
-  // ==================== INVOICE OPERATIONS ====================
+  CollectionReference<Map<String, dynamic>> get _invoices =>
+      _db.collection(FirestoreCollections.invoices);
 
-  /// Save a finalized invoice to mock storage
+  CollectionReference<Map<String, dynamic>> get _drafts =>
+      _db.collection(FirestoreCollections.invoiceDrafts);
+
+  // =========================================================================
+  // INVOICE OPERATIONS
+  // =========================================================================
+
+  /// Save a finalized invoice. Returns the Firestore document ID.
   Future<String> saveInvoice(Invoice invoice) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      _mockInvoices.removeWhere((inv) => inv.id == invoice.id);
-      _mockInvoices.add(invoice);
-      return invoice.id;
-    } catch (e) {
-      throw Exception('Failed to save invoice: $e');
-    }
+    final doc = _invoices.doc(invoice.id.isEmpty ? null : invoice.id);
+    await doc.set(_toFirestoreMap(invoice.toJson()..['id'] = doc.id));
+    return doc.id;
   }
 
-  /// Update an existing invoice
+  /// Update an existing invoice in place.
   Future<void> updateInvoice(Invoice invoice) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      final index = _mockInvoices.indexWhere((inv) => inv.id == invoice.id);
-      if (index != -1) {
-        final updatedInvoice = invoice.copyWith(updatedAt: DateTime.now());
-        _mockInvoices[index] = updatedInvoice;
-      }
-    } catch (e) {
-      throw Exception('Failed to update invoice: $e');
-    }
+    final data = _toFirestoreMap(invoice.toJson())
+      ..['updatedAt'] = FieldValue.serverTimestamp();
+    await _invoices.doc(invoice.id).update(data);
   }
 
-  /// Get invoice by ID
+  /// Fetch a single invoice by ID, or null if not found / soft-deleted.
   Future<Invoice?> getInvoice(String invoiceId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 50));
-      return _mockInvoices.firstWhere(
-        (inv) => inv.id == invoiceId,
-        orElse: () => throw Exception('Invoice not found'),
-      );
-    } catch (e) {
-      if (e.toString().contains('Invoice not found')) return null;
-      throw Exception('Failed to get invoice: $e');
-    }
+    final doc = await _invoices.doc(invoiceId).get();
+    if (!doc.exists) return null;
+    final data = _fromFirestoreMap(doc.data()!);
+    if (data['isDeleted'] == true) return null;
+    return Invoice.fromJson(data..['id'] = doc.id);
   }
 
-  /// Get all invoices for a user
+  /// All non-deleted invoices for [userId], newest first.
   Future<List<Invoice>> getInvoicesByUser(String userId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      return _mockInvoices
-          .where((inv) => inv.createdBy == userId)
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    } catch (e) {
-      throw Exception('Failed to get invoices: $e');
-    }
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snap.docs
+        .map((d) => Invoice.fromJson(_fromFirestoreMap(d.data())..['id'] = d.id))
+        .toList();
   }
 
-  /// Get invoices by date range
-  Future<List<Invoice>> getInvoicesByDateRange({
-    required String userId,
-    required DateTime startDate,
-    required DateTime endDate,
-  }) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      return _mockInvoices
-          .where((inv) => 
-              inv.createdBy == userId &&
-              !inv.issueDate.isBefore(startDate) &&
-              !inv.issueDate.isAfter(endDate))
-          .toList()
-        ..sort((a, b) => b.issueDate.compareTo(a.issueDate));
-    } catch (e) {
-      throw Exception('Failed to get invoices by date range: $e');
-    }
+  /// Invoices within a date range (inclusive), for [userId].
+  Future<List<Invoice>> getInvoicesByDateRange(
+    String userId,
+    DateTime start,
+    DateTime end,
+  ) async {
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .where('issueDate', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('issueDate', isLessThanOrEqualTo: Timestamp.fromDate(end))
+        .orderBy('issueDate', descending: true)
+        .get();
+    return snap.docs
+        .map((d) => Invoice.fromJson(_fromFirestoreMap(d.data())..['id'] = d.id))
+        .toList();
   }
 
-  /// Get invoices by compliance status
-  Future<List<Invoice>> getInvoicesByStatus({
-    required String userId,
-    required ComplianceStatus status,
-  }) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      return _mockInvoices
-          .where((inv) => 
-              inv.createdBy == userId &&
-              inv.complianceStatus == status)
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    } catch (e) {
-      throw Exception('Failed to get invoices by status: $e');
-    }
+  /// Invoices with a specific [ComplianceStatus] for [userId].
+  Future<List<Invoice>> getInvoicesByStatus(
+    String userId,
+    ComplianceStatus status,
+  ) async {
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .where('complianceStatus', isEqualTo: status.name)
+        .get();
+    return snap.docs
+        .map((d) => Invoice.fromJson(_fromFirestoreMap(d.data())..['id'] = d.id))
+        .toList();
   }
 
-  /// Get invoices requiring submission (total >= RM10k)
+  /// Invoices that need MyInvois submission (amount ≥ RM10 000).
   Future<List<Invoice>> getInvoicesRequiringSubmission(String userId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      return _mockInvoices
-          .where((inv) => 
-              inv.createdBy == userId &&
-              inv.requiresSubmission &&
-              (inv.complianceStatus == ComplianceStatus.draft ||
-               inv.complianceStatus == ComplianceStatus.validated))
-          .toList()
-        ..sort((a, b) => b.issueDate.compareTo(a.issueDate));
-    } catch (e) {
-      throw Exception('Failed to get invoices requiring submission: $e');
-    }
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .where('requiresSubmission', isEqualTo: true)
+        .where('complianceStatus', isEqualTo: ComplianceStatus.validated.name)
+        .get();
+    return snap.docs
+        .map((d) => Invoice.fromJson(_fromFirestoreMap(d.data())..['id'] = d.id))
+        .toList();
   }
 
-  /// Delete invoice
+  /// Soft-delete: sets [isDeleted] = true and records [deletedAt].
   Future<void> deleteInvoice(String invoiceId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      _mockInvoices.removeWhere((inv) => inv.id == invoiceId);
-    } catch (e) {
-      throw Exception('Failed to delete invoice: $e');
-    }
+    await _invoices.doc(invoiceId).update({
+      'isDeleted': true,
+      'deletedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
-  /// Update invoice compliance status
-  Future<void> updateComplianceStatus({
-    required String invoiceId,
-    required ComplianceStatus status,
+  /// Update only the [complianceStatus] field (and optionally the LHDN reference).
+  Future<void> updateComplianceStatus(
+    String invoiceId,
+    ComplianceStatus status, {
     String? myInvoisReferenceId,
+    DateTime? submissionDate,
   }) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      final index = _mockInvoices.indexWhere((inv) => inv.id == invoiceId);
-      if (index != -1) {
-        var invoice = _mockInvoices[index];
-        invoice = invoice.copyWith(
-          complianceStatus: status,
-          updatedAt: DateTime.now(),
-        );
-        
-        if (status == ComplianceStatus.submitted && myInvoisReferenceId != null) {
-          invoice = invoice.copyWith(
-            myInvoisReferenceId: myInvoisReferenceId,
-          );
-        }
-        
-        _mockInvoices[index] = invoice;
-      }
-    } catch (e) {
-      throw Exception('Failed to update compliance status: $e');
+    final update = <String, dynamic>{
+      'complianceStatus': status.name,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (myInvoisReferenceId != null) {
+      update['myInvoisReferenceId'] = myInvoisReferenceId;
     }
+    if (submissionDate != null) {
+      update['submissionDate'] = Timestamp.fromDate(submissionDate);
+    }
+    await _invoices.doc(invoiceId).update(update);
   }
 
-  // ==================== DRAFT OPERATIONS ====================
+  // =========================================================================
+  // DRAFT OPERATIONS
+  // =========================================================================
 
-  /// Save invoice draft
-  Future<String> saveDraft(InvoiceDraft draft, String userId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      final draftId = DateTime.now().millisecondsSinceEpoch.toString();
-      _mockDrafts[draftId] = _DraftWithMetadata(
-        id: draftId,
-        userId: userId,
-        createdAt: DateTime.now(),
-        draft: draft,
-      );
+  /// Save (or overwrite) a draft. Returns the document ID.
+  /// Pass [draftId] to upsert an existing draft, omit to auto-generate.
+  Future<String> saveDraft(InvoiceDraft draft, String userId, {String? draftId}) async {
+    final now = FieldValue.serverTimestamp();
+    final data = _toFirestoreMap(draft.toJson())
+      ..['userId'] = userId
+      ..['updatedAt'] = now;
+
+    if (draftId != null && draftId.isNotEmpty) {
+      await _drafts.doc(draftId).set(data..['createdAt'] = now, SetOptions(merge: true));
       return draftId;
-    } catch (e) {
-      throw Exception('Failed to save draft: $e');
+    } else {
+      final doc = _drafts.doc();
+      await doc.set(data..['createdAt'] = now);
+      return doc.id;
     }
   }
 
-  /// Get draft by ID
+  /// Fetch a draft by ID.
   Future<InvoiceDraft?> getDraft(String draftId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 50));
-      return _mockDrafts[draftId]?.draft;
-    } catch (e) {
-      throw Exception('Failed to get draft: $e');
-    }
+    final doc = await _drafts.doc(draftId).get();
+    if (!doc.exists) return null;
+    return InvoiceDraft.fromJson(_fromFirestoreMap(doc.data()!));
   }
 
-  /// Get all drafts for a user
+  /// All drafts for [userId], newest first.
   Future<List<InvoiceDraft>> getDraftsByUser(String userId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      final userDrafts = _mockDrafts.values
-          .where((metadata) => metadata.userId == userId)
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return userDrafts.map((m) => m.draft).toList();
-    } catch (e) {
-      throw Exception('Failed to get drafts: $e');
-    }
+    final snap = await _drafts
+        .where('userId', isEqualTo: userId)
+        .orderBy('updatedAt', descending: true)
+        .get();
+    return snap.docs
+        .map((d) => InvoiceDraft.fromJson(_fromFirestoreMap(d.data())))
+        .toList();
   }
 
-  /// Delete draft
+  /// Delete a draft permanently.
   Future<void> deleteDraft(String draftId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      _mockDrafts.remove(draftId);
-    } catch (e) {
-      throw Exception('Failed to delete draft: $e');
-    }
+    await _drafts.doc(draftId).delete();
   }
 
-  // ==================== ANALYTICS & REPORTING ====================
+  // =========================================================================
+  // ANALYTICS (aggregated queries)
+  // =========================================================================
 
-  /// Get total revenue for a period
-  Future<double> getTotalRevenue({
-    required String userId,
-    required DateTime startDate,
-    required DateTime endDate,
-  }) async {
-    try {
-      final invoices = await getInvoicesByDateRange(
-        userId: userId,
-        startDate: startDate,
-        endDate: endDate,
+  /// Total revenue for [userId] across all accepted invoices.
+  Future<double> getTotalRevenue(String userId) async {
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .where('complianceStatus', isEqualTo: ComplianceStatus.accepted.name)
+        .get();
+    return snap.docs.fold<double>(
+      0.0,
+      (sum, d) => sum + ((d.data()['totalAmount'] as num?) ?? 0).toDouble(),
+    );
+  }
+
+  /// Count of invoices per [ComplianceStatus] for [userId].
+  Future<Map<ComplianceStatus, int>> getInvoiceCountByStatus(
+      String userId) async {
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .get();
+    final counts = <ComplianceStatus, int>{};
+    for (final doc in snap.docs) {
+      final statusStr = doc.data()['complianceStatus'] as String?;
+      final status = ComplianceStatus.values.firstWhere(
+        (s) => s.name == statusStr,
+        orElse: () => ComplianceStatus.draft,
       );
-
-      return invoices.fold<double>(0.0, (sum, invoice) => sum + invoice.totalAmount);
-    } catch (e) {
-      throw Exception('Failed to calculate total revenue: $e');
+      counts[status] = (counts[status] ?? 0) + 1;
     }
+    return counts;
   }
 
-  /// Get invoice count by status
-  Future<Map<ComplianceStatus, int>> getInvoiceCountByStatus(String userId) async {
-    try {
-      final invoices = await getInvoicesByUser(userId);
-      final countMap = <ComplianceStatus, int>{};
-
-      for (final status in ComplianceStatus.values) {
-        countMap[status] = invoices
-            .where((invoice) => invoice.complianceStatus == status)
-            .length;
-      }
-
-      return countMap;
-    } catch (e) {
-      throw Exception('Failed to get invoice count by status: $e');
-    }
-  }
-
-  /// Get compliance readiness statistics
+  /// Compliance statistics map for [userId].
   Future<Map<String, dynamic>> getComplianceStats(String userId) async {
-    try {
-      final invoices = await getInvoicesByUser(userId);
-      
-      final requiresSubmission = invoices
-          .where((inv) => inv.requiresSubmission)
-          .length;
-      
-      final submitted = invoices
-          .where((inv) => inv.complianceStatus == ComplianceStatus.submitted || 
-                         inv.complianceStatus == ComplianceStatus.accepted)
-          .length;
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .get();
+    int total = snap.docs.length;
+    int pending = 0;
+    int submitted = 0;
+    double revenue = 0;
 
-      final pending = invoices
-          .where((inv) => inv.requiresSubmission && 
-                         inv.complianceStatus != ComplianceStatus.submitted &&
-                         inv.complianceStatus != ComplianceStatus.accepted)
-          .length;
-
-      final totalValue = invoices.fold(0.0, (sum, inv) => sum + inv.totalAmount);
-
-      return {
-        'totalInvoices': invoices.length,
-        'requiresSubmission': requiresSubmission,
-        'submitted': submitted,
-        'pending': pending,
-        'totalValue': totalValue,
-        'complianceRate': requiresSubmission > 0 
-            ? (submitted / requiresSubmission * 100) 
-            : 100.0,
-      };
-    } catch (e) {
-      throw Exception('Failed to get compliance stats: $e');
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final status = data['complianceStatus'] as String?;
+      if (status == ComplianceStatus.validated.name) pending++;
+      if (status == ComplianceStatus.submitted.name ||
+          status == ComplianceStatus.accepted.name) submitted++;
+      revenue += ((data['totalAmount'] as num?) ?? 0).toDouble();
     }
+
+    return {
+      'totalInvoices': total,
+      'pendingSubmissions': pending,
+      'submittedThisMonth': submitted,
+      'totalRevenue': revenue,
+    };
   }
 
-  // ==================== SEARCH & FILTER ====================
+  // =========================================================================
+  // SEARCH
+  // =========================================================================
 
-  /// Search invoices by buyer name
-  Future<List<Invoice>> searchInvoicesByBuyer({
-    required String userId,
-    required String buyerName,
-  }) async {
-    try {
-      final invoices = await getInvoicesByUser(userId);
-      
-      return invoices
-          .where((invoice) => 
-              invoice.buyer.name.toLowerCase().contains(buyerName.toLowerCase()))
-          .toList();
-    } catch (e) {
-      throw Exception('Failed to search invoices: $e');
-    }
+  /// Search invoices by buyer name (case-sensitive prefix; use lowercase field for better UX).
+  Future<List<Invoice>> searchInvoicesByBuyer(
+      String userId, String buyerName) async {
+    // Firestore doesn't support full-text search; use range query on buyer.name.
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .where('buyer.name', isGreaterThanOrEqualTo: buyerName)
+        .where('buyer.name', isLessThan: '${buyerName}z')
+        .get();
+    return snap.docs
+        .map((d) => Invoice.fromJson(_fromFirestoreMap(d.data())..['id'] = d.id))
+        .toList();
   }
 
-  /// Search invoices by invoice number
-  Future<Invoice?> searchByInvoiceNumber({
-    required String userId,
-    required String invoiceNumber,
-  }) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 50));
-      return _mockInvoices.firstWhere(
-        (inv) => inv.createdBy == userId && inv.invoiceNumber == invoiceNumber,
-        orElse: () => throw Exception('Invoice not found'),
+  /// Exact match search by invoice number for [userId].
+  Future<Invoice?> searchByInvoiceNumber(
+      String userId, String invoiceNumber) async {
+    final snap = await _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('invoiceNumber', isEqualTo: invoiceNumber)
+        .where('isDeleted', isEqualTo: false)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final d = snap.docs.first;
+    return Invoice.fromJson(_fromFirestoreMap(d.data())..['id'] = d.id);
+  }
+
+  // =========================================================================
+  // BATCH & STREAMING
+  // =========================================================================
+
+  /// Apply [updater] to a list of invoices in a single Firestore batch write.
+  Future<void> batchUpdateInvoices(
+    List<String> invoiceIds,
+    Invoice Function(Invoice) updater,
+  ) async {
+    final batch = _db.batch();
+    for (final id in invoiceIds) {
+      final doc = await _invoices.doc(id).get();
+      if (!doc.exists) continue;
+      final invoice =
+          Invoice.fromJson(_fromFirestoreMap(doc.data()!)..['id'] = id);
+      final updated = updater(invoice);
+      batch.update(
+        _invoices.doc(id),
+        _toFirestoreMap(updated.toJson())
+          ..['updatedAt'] = FieldValue.serverTimestamp(),
       );
-    } catch (e) {
-      if (e.toString().contains('Invoice not found')) return null;
-      throw Exception('Failed to search by invoice number: $e');
     }
+    await batch.commit();
   }
 
-  // ==================== BATCH OPERATIONS ====================
+  /// Real-time stream of all non-deleted invoices for [userId].
+  Stream<List<Invoice>> streamInvoices(String userId) {
+    return _invoices
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) =>
+                Invoice.fromJson(_fromFirestoreMap(d.data())..['id'] = d.id))
+            .toList());
+  }
 
-  /// Batch update invoices
-  Future<void> batchUpdateInvoices(List<Invoice> invoices) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 200));
-      for (final invoice in invoices) {
-        final index = _mockInvoices.indexWhere((inv) => inv.id == invoice.id);
-        if (index != -1) {
-          _mockInvoices[index] = invoice;
-        }
+  // =========================================================================
+  // PRIVATE HELPERS — DateTime ↔ Timestamp conversion
+  // =========================================================================
+
+  /// Recursively converts [DateTime] ISO strings produced by json_annotation
+  /// into Firestore [Timestamp] objects.
+  static Map<String, dynamic> _toFirestoreMap(Map<String, dynamic> json) {
+    return json.map((key, value) {
+      if (value is String) {
+        final dt = _tryParseDateTime(key, value);
+        if (dt != null) return MapEntry(key, Timestamp.fromDate(dt));
+      } else if (value is Map<String, dynamic>) {
+        return MapEntry(key, _toFirestoreMap(value));
+      } else if (value is List) {
+        return MapEntry(
+          key,
+          value
+              .map((e) =>
+                  e is Map<String, dynamic> ? _toFirestoreMap(e) : e)
+              .toList(),
+        );
       }
-    } catch (e) {
-      throw Exception('Failed to batch update invoices: $e');
-    }
+      return MapEntry(key, value);
+    });
   }
 
-  /// Stream invoices (real-time updates) - Mock version returns snapshot
-  Stream<List<Invoice>> streamInvoices(String userId) async* {
-    while (true) {
-      await Future.delayed(const Duration(seconds: 1));
-      yield _mockInvoices
-          .where((inv) => inv.createdBy == userId)
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    }
+  /// Inverse of [_toFirestoreMap]: converts Firestore [Timestamp] objects back
+  /// to ISO 8601 strings so the json_annotation fromJson constructors work.
+  static Map<String, dynamic> _fromFirestoreMap(Map<String, dynamic> data) {
+    return data.map((key, value) {
+      if (value is Timestamp) {
+        return MapEntry(key, value.toDate().toIso8601String());
+      } else if (value is Map<String, dynamic>) {
+        return MapEntry(key, _fromFirestoreMap(value));
+      } else if (value is List) {
+        return MapEntry(
+          key,
+          value
+              .map((e) =>
+                  e is Map<String, dynamic> ? _fromFirestoreMap(e) : e)
+              .toList(),
+        );
+      }
+      return MapEntry(key, value);
+    });
   }
-}
 
-// Helper class to store draft with metadata
-class _DraftWithMetadata {
-  final String id;
-  final String userId;
-  final DateTime createdAt;
-  final InvoiceDraft draft;
-
-  _DraftWithMetadata({
-    required this.id,
-    required this.userId,
-    required this.createdAt,
-    required this.draft,
-  });
+  /// Returns a [DateTime] if [value] is an ISO string AND [key] looks like a
+  /// date/timestamp field. Avoids false positives on arbitrary strings.
+  static DateTime? _tryParseDateTime(String key, String value) {
+    const dateKeys = {
+      'issueDate', 'dueDate', 'submissionDate', 'createdAt', 'updatedAt',
+      'deletedAt', 'lastInvoiceDate',
+    };
+    if (!dateKeys.contains(key)) return null;
+    return DateTime.tryParse(value);
+  }
 }

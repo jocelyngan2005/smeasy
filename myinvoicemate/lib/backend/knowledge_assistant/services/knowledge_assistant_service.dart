@@ -1,18 +1,23 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:uuid/uuid.dart';
+import '../../firestore_collections.dart';
 import '../models/compliance_question.dart';
 import '../compliance_documents.dart';
 import 'vertex_ai_search_service.dart';
 
 /// AI-powered Knowledge Assistant for LHDN Compliance
-/// Uses Vertex AI Search (preferred) or Gemini AI with RAG (fallback)
+/// Uses Vertex AI Search (preferred) or Gemini AI with RAG (fallback).
+/// Answered questions are persisted to /compliance_questions/{questionId}.
 class KnowledgeAssistantService {
   late final GenerativeModel _model;
   late final VertexAISearchService _vertexSearch;
   final Uuid _uuid = const Uuid();
+  final FirebaseFirestore _db;
 
-  KnowledgeAssistantService() {
+  KnowledgeAssistantService({FirebaseFirestore? firestore})
+      : _db = firestore ?? FirebaseFirestore.instance {
     // Initialize Vertex AI Search
     _vertexSearch = VertexAISearchService();
 
@@ -43,20 +48,75 @@ class KnowledgeAssistantService {
     );
   }
 
-  /// Ask a compliance question - uses Vertex AI Search if configured, otherwise RAG
-  Future<ComplianceQuestion> askQuestion(String question) async {
+  /// Ask a compliance question - uses Vertex AI Search if configured, otherwise RAG.
+  ///
+  /// When [userId] is provided, the question and answer are persisted to
+  /// /compliance_questions/{questionId} for later history retrieval.
+  Future<ComplianceQuestion> askQuestion(String question,
+      {String? userId}) async {
+    ComplianceQuestion result;
+
     // Try Vertex AI Search first (enterprise-grade)
     if (_vertexSearch.isConfigured) {
       try {
-        return await _askQuestionWithVertexAI(question);
+        result = await _askQuestionWithVertexAI(question);
       } catch (e) {
+        // ignore: avoid_print
         print('Vertex AI Search failed, falling back to RAG: $e');
-        // Fall through to RAG approach
+        result = await _askQuestionWithRAG(question);
       }
+    } else {
+      result = await _askQuestionWithRAG(question);
     }
 
-    // Fallback to RAG approach
-    return await _askQuestionWithRAG(question);
+    // Persist to Firestore when we have a userId
+    if (userId != null && userId.isNotEmpty) {
+      await _saveQuestion(result, userId);
+    }
+
+    return result;
+  }
+
+  /// Retrieve the chat history for [userId], newest first.
+  Future<List<ComplianceQuestion>> getQuestionHistory(String userId,
+      {int limit = 50}) async {
+    final snap = await _db
+        .collection(FirestoreCollections.complianceQuestions)
+        .where('userId', isEqualTo: userId)
+        .orderBy('timestamp', descending: true)
+        .limit(limit)
+        .get();
+    return snap.docs.map((d) {
+      final raw = d.data();
+      final ts = raw['timestamp'];
+      raw['timestamp'] = ts is Timestamp
+          ? ts.toDate().toIso8601String()
+          : DateTime.now().toIso8601String();
+      raw['id'] = d.id;
+      return ComplianceQuestion.fromJson(raw);
+    }).toList();
+  }
+
+  /// Persist a [ComplianceQuestion] to /compliance_questions.
+  Future<void> _saveQuestion(
+      ComplianceQuestion q, String userId) async {
+    try {
+      final doc = _db.collection(FirestoreCollections.complianceQuestions).doc();
+      await doc.set({
+        'userId': userId,
+        'question': q.question,
+        'answer': q.answer,
+        'sources': q.sources,
+        'relatedTopics': q.relatedTopics,
+        'confidenceScore': q.confidenceScore,
+        'category': q.category,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      // Non-fatal — question was answered successfully; just log.
+      // ignore: avoid_print
+      print('Warning: could not persist compliance question: $e');
+    }
   }
 
   /// Ask question using Vertex AI Search (preferred method)

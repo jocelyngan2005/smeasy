@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "157134124123",
+    "project_id": "myinvoicemate",
+    "storage_bucket": "myinvoicemate.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:157134124123:android:1aea4d16aedad35aaefb7e",
+        "android_client_info": {
+          "package_name": "com.example.myinvoicemate"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5WY2Y2HUX-25mkTTRUXwmNPw2WQAfZL8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

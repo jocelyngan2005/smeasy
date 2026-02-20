@@ -1,217 +1,235 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../firestore_collections.dart';
 import '../models/customer_model.dart';
 import '../../invoice/models/invoice_model.dart';
 
+/// Real Firestore-backed customer service.
+///
+/// All customers are user-isolated via [createdBy] (indexed in Firestore).
 class CustomerService {
-  // Mock in-memory storage (replace with Firebase later)
-  static final List<Customer> _mockCustomers = [];
+  CustomerService({FirebaseFirestore? firestore})
+      : _db = firestore ?? FirebaseFirestore.instance;
 
-  /// Get all customers for the current user
+  final FirebaseFirestore _db;
+
+  CollectionReference<Map<String, dynamic>> get _customers =>
+      _db.collection(FirestoreCollections.customers);
+
+  /// All customers for [userId], sorted alphabetically by name.
   Future<List<Customer>> getCustomers({String? userId}) async {
     if (userId == null) return [];
-
     try {
-      await Future.delayed(const Duration(milliseconds: 100)); // Simulate network delay
-      return _mockCustomers
-          .where((c) => c.createdBy == userId)
-          .toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
+      final snap = await _customers
+          .where('createdBy', isEqualTo: userId)
+          .orderBy('name')
+          .get();
+      return snap.docs
+          .map((d) => Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id))
+          .toList();
     } catch (e) {
+      // ignore: avoid_print
       print('Error fetching customers: $e');
       return [];
     }
   }
 
-  /// Search customers by name, TIN, or IC
+  /// Search customers by name prefix, or exact TIN / identification number.
+  ///
+  /// Firestore doesn't support full-text search, so name search is prefix-based.
+  /// For richer search, pipe through Algolia or use a cloud function.
   Future<List<Customer>> searchCustomers({
     required String query,
     String? userId,
   }) async {
     if (userId == null || query.isEmpty) return [];
-
     try {
-      final allCustomers = await getCustomers(userId: userId);
-      final lowerQuery = query.toLowerCase();
-
-      return allCustomers.where((customer) {
-        return customer.name.toLowerCase().contains(lowerQuery) ||
-            (customer.tin?.toLowerCase().contains(lowerQuery) ?? false) ||
-            (customer.identificationNumber?.toLowerCase().contains(lowerQuery) ?? false) ||
-            (customer.email?.toLowerCase().contains(lowerQuery) ?? false);
-      }).toList();
+      // Prefix search on name
+      final snap = await _customers
+          .where('createdBy', isEqualTo: userId)
+          .where('name', isGreaterThanOrEqualTo: query)
+          .where('name', isLessThan: '${query}\uF8FF')
+          .get();
+      final results = snap.docs
+          .map((d) => Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id))
+          .toList();
+      // Also try exact TIN match
+      final tinSnap = await _customers
+          .where('createdBy', isEqualTo: userId)
+          .where('tin', isEqualTo: query)
+          .get();
+      for (final d in tinSnap.docs) {
+        if (!results.any((c) => c.id == d.id)) {
+          results.add(Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id));
+        }
+      }
+      return results;
     } catch (e) {
+      // ignore: avoid_print
       print('Error searching customers: $e');
       return [];
     }
   }
 
-  /// Get a single customer by ID
+  /// Fetch a single customer by document ID.
   Future<Customer?> getCustomer(String customerId) async {
     try {
-      await Future.delayed(const Duration(milliseconds: 50));
-      return _mockCustomers.firstWhere(
-        (c) => c.id == customerId,
-        orElse: () => throw Exception('Customer not found'),
-      );
+      final doc = await _customers.doc(customerId).get();
+      if (!doc.exists) return null;
+      return Customer.fromJson(_fromFirestore(doc.data()!)..['id'] = doc.id);
     } catch (e) {
+      // ignore: avoid_print
       print('Error fetching customer: $e');
       return null;
     }
   }
 
-  /// Create a new customer
+  /// Create a new customer document and return it with the assigned ID.
   Future<Customer?> createCustomer(Customer customer) async {
     try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      final newCustomer = customer.copyWith(
-        id: 'cust_${DateTime.now().millisecondsSinceEpoch}',
-      );
-      _mockCustomers.add(newCustomer);
-      return newCustomer;
+      final doc = _customers.doc();
+      final data = _toFirestore(customer.toJson()..['id'] = doc.id);
+      await doc.set(data);
+      return customer.copyWith(id: doc.id);
     } catch (e) {
+      // ignore: avoid_print
       print('Error creating customer: $e');
       return null;
     }
   }
 
-  /// Update an existing customer
+  /// Update an existing customer document.
   Future<bool> updateCustomer(Customer customer) async {
     try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      final index = _mockCustomers.indexWhere((c) => c.id == customer.id);
-      if (index != -1) {
-        _mockCustomers[index] = customer.copyWith(updatedAt: DateTime.now());
-        return true;
-      }
-      return false;
+      final data = _toFirestore(customer.toJson())
+        ..['updatedAt'] = FieldValue.serverTimestamp();
+      await _customers.doc(customer.id).update(data);
+      return true;
     } catch (e) {
+      // ignore: avoid_print
       print('Error updating customer: $e');
       return false;
     }
   }
 
-  /// Delete a customer
+  /// Permanently delete a customer document.
   Future<bool> deleteCustomer(String customerId) async {
     try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      _mockCustomers.removeWhere((c) => c.id == customerId);
+      await _customers.doc(customerId).delete();
       return true;
     } catch (e) {
+      // ignore: avoid_print
       print('Error deleting customer: $e');
       return false;
     }
   }
 
-  /// Toggle favorite status
+  /// Toggle the [isFavorite] flag for a customer.
   Future<bool> toggleFavorite(String customerId, bool isFavorite) async {
     try {
-      await Future.delayed(const Duration(milliseconds: 50));
-      final index = _mockCustomers.indexWhere((c) => c.id == customerId);
-      if (index != -1) {
-        _mockCustomers[index] = _mockCustomers[index].copyWith(
-          isFavorite: isFavorite,
-          updatedAt: DateTime.now(),
-        );
-        return true;
-      }
-      return false;
+      await _customers.doc(customerId).update({
+        'isFavorite': isFavorite,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
     } catch (e) {
+      // ignore: avoid_print
       print('Error toggling favorite: $e');
       return false;
     }
   }
 
-  /// Get favorite customers
+  /// Customers marked as favourite for [userId].
   Future<List<Customer>> getFavoriteCustomers({String? userId}) async {
     if (userId == null) return [];
-
     try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      return _mockCustomers
-          .where((c) => c.createdBy == userId && c.isFavorite)
-          .toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
+      final snap = await _customers
+          .where('createdBy', isEqualTo: userId)
+          .where('isFavorite', isEqualTo: true)
+          .orderBy('name')
+          .get();
+      return snap.docs
+          .map((d) => Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id))
+          .toList();
     } catch (e) {
+      // ignore: avoid_print
       print('Error fetching favorite customers: $e');
       return [];
     }
   }
 
-  /// Get top customers by revenue
+  /// Top [limit] customers by total revenue for [userId].
   Future<List<Customer>> getTopCustomers({String? userId, int limit = 5}) async {
     if (userId == null) return [];
-
     try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      final customers = _mockCustomers
-          .where((c) => c.createdBy == userId)
-          .toList()
-        ..sort((a, b) => b.totalRevenue.compareTo(a.totalRevenue));
-      return customers.take(limit).toList();
+      final snap = await _customers
+          .where('createdBy', isEqualTo: userId)
+          .orderBy('totalRevenue', descending: true)
+          .limit(limit)
+          .get();
+      return snap.docs
+          .map((d) => Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id))
+          .toList();
     } catch (e) {
+      // ignore: avoid_print
       print('Error fetching top customers: $e');
       return [];
     }
   }
 
-  /// Update customer statistics (called when an invoice is created)
+  /// Atomically increment [invoiceCount]/[totalRevenue] and set [lastInvoiceDate].
   Future<void> updateCustomerStats({
     required String customerId,
     required double invoiceAmount,
   }) async {
     try {
-      final customer = await getCustomer(customerId);
-      if (customer == null) return;
-
-      final index = _mockCustomers.indexWhere((c) => c.id == customerId);
-      if (index != -1) {
-        _mockCustomers[index] = customer.copyWith(
-          invoiceCount: customer.invoiceCount + 1,
-          totalRevenue: customer.totalRevenue + invoiceAmount,
-          lastInvoiceDate: DateTime.now(),
-          updatedAt: DateTime.now(),
-        );
-      }
+      await _customers.doc(customerId).update({
+        'invoiceCount': FieldValue.increment(1),
+        'totalRevenue': FieldValue.increment(invoiceAmount),
+        'lastInvoiceDate': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
+      // ignore: avoid_print
       print('Error updating customer stats: $e');
     }
   }
 
-  /// Find or create customer from PartyInfo
-  /// This helps auto-save customers when creating invoices
+  /// Look up a [Customer] by TIN, then by name; creates one if not found.
   Future<Customer?> findOrCreateFromPartyInfo({
     required PartyInfo partyInfo,
     required String userId,
   }) async {
     try {
-      // Try to find existing customer by TIN or IC
-      final allCustomers = await getCustomers(userId: userId);
-      
-      final existing = allCustomers.where((customer) {
-        if (partyInfo.tin != null && customer.tin == partyInfo.tin) {
-          return true;
+      // 1 — exact TIN match
+      if (partyInfo.tin != null && partyInfo.tin!.isNotEmpty) {
+        final snap = await _customers
+            .where('createdBy', isEqualTo: userId)
+            .where('tin', isEqualTo: partyInfo.tin)
+            .limit(1)
+            .get();
+        if (snap.docs.isNotEmpty) {
+          final d = snap.docs.first;
+          return Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id);
         }
-        if (partyInfo.identificationNumber != null && 
-            customer.identificationNumber == partyInfo.identificationNumber) {
-          return true;
-        }
-        // Exact name match
-        if (customer.name.toLowerCase() == partyInfo.name.toLowerCase()) {
-          return true;
-        }
-        return false;
-      }).toList();
-
-      if (existing.isNotEmpty) {
-        return existing.first;
       }
-
-      // Create new customer
+      // 2 — exact name match (requires composite index createdBy + name)
+      final nameSnap = await _customers
+          .where('createdBy', isEqualTo: userId)
+          .where('name', isEqualTo: partyInfo.name)
+          .limit(1)
+          .get();
+      if (nameSnap.docs.isNotEmpty) {
+        final d = nameSnap.docs.first;
+        return Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id);
+      }
+      // 3 — create new
       final newCustomer = Customer.fromPartyInfo(
         partyInfo: partyInfo,
         userId: userId,
       );
       return await createCustomer(newCustomer);
     } catch (e) {
+      // ignore: avoid_print
       print('Error finding or creating customer: $e');
       return null;
     }
@@ -222,25 +240,25 @@ class CustomerService {
     return customer.addresses;
   }
 
-  /// Add a new address to a customer
+  /// Append an address to a customer's [addresses] array.
   Future<bool> addAddress({
     required String customerId,
     required CustomerAddress address,
   }) async {
     try {
-      final customer = await getCustomer(customerId);
-      if (customer == null) return false;
-
-      final updatedAddresses = [...customer.addresses, address];
-      await updateCustomer(customer.copyWith(addresses: updatedAddresses));
+      await _customers.doc(customerId).update({
+        'addresses': FieldValue.arrayUnion([address.toJson()]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       return true;
     } catch (e) {
+      // ignore: avoid_print
       print('Error adding address: $e');
       return false;
     }
   }
 
-  /// Update an address for a customer
+  /// Replace an existing address in the [addresses] array.
   Future<bool> updateAddress({
     required String customerId,
     required CustomerAddress address,
@@ -248,20 +266,21 @@ class CustomerService {
     try {
       final customer = await getCustomer(customerId);
       if (customer == null) return false;
-
-      final updatedAddresses = customer.addresses.map((addr) {
-        return addr.id == address.id ? address : addr;
-      }).toList();
-
-      await updateCustomer(customer.copyWith(addresses: updatedAddresses));
+      final updatedAddresses =
+          customer.addresses.map((a) => a.id == address.id ? address : a).toList();
+      await _customers.doc(customerId).update({
+        'addresses': updatedAddresses.map((a) => a.toJson()).toList(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       return true;
     } catch (e) {
+      // ignore: avoid_print
       print('Error updating address: $e');
       return false;
     }
   }
 
-  /// Delete an address from a customer
+  /// Remove an address from the [addresses] array.
   Future<bool> deleteAddress({
     required String customerId,
     required String addressId,
@@ -269,41 +288,90 @@ class CustomerService {
     try {
       final customer = await getCustomer(customerId);
       if (customer == null) return false;
-
-      final updatedAddresses = customer.addresses
-          .where((addr) => addr.id != addressId)
-          .toList();
-
-      if (updatedAddresses.isEmpty) {
-        // Can't delete the last address
-        return false;
-      }
-
-      await updateCustomer(customer.copyWith(addresses: updatedAddresses));
+      final updatedAddresses =
+          customer.addresses.where((a) => a.id != addressId).toList();
+      if (updatedAddresses.isEmpty) return false; // keep at least one
+      await _customers.doc(customerId).update({
+        'addresses': updatedAddresses.map((a) => a.toJson()).toList(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       return true;
     } catch (e) {
+      // ignore: avoid_print
       print('Error deleting address: $e');
       return false;
     }
   }
 
-  /// Get recent customers (by last invoice date)
+  /// Most recently invoiced customers (by [lastInvoiceDate]) for [userId].
   Future<List<Customer>> getRecentCustomers({
     String? userId,
     int limit = 10,
   }) async {
     if (userId == null) return [];
-
     try {
-      await Future.delayed(const Duration(milliseconds: 100));
-      final customers = _mockCustomers
-          .where((c) => c.createdBy == userId && c.lastInvoiceDate != null)
-          .toList()
-        ..sort((a, b) => b.lastInvoiceDate!.compareTo(a.lastInvoiceDate!));
-      return customers.take(limit).toList();
+      final snap = await _customers
+          .where('createdBy', isEqualTo: userId)
+          .orderBy('lastInvoiceDate', descending: true)
+          .limit(limit)
+          .get();
+      return snap.docs
+          .map((d) => Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id))
+          .toList();
     } catch (e) {
+      // ignore: avoid_print
       print('Error fetching recent customers: $e');
       return [];
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers — Timestamp ↔ ISO string conversion
+  // ---------------------------------------------------------------------------
+
+  static Map<String, dynamic> _toFirestore(Map<String, dynamic> json) {
+    return json.map((key, value) {
+      if (value is String) {
+        final dt = _tryParseDate(key, value);
+        if (dt != null) return MapEntry(key, Timestamp.fromDate(dt));
+      } else if (value is Map<String, dynamic>) {
+        return MapEntry(key, _toFirestore(value));
+      } else if (value is List) {
+        return MapEntry(
+          key,
+          value
+              .map((e) => e is Map<String, dynamic> ? _toFirestore(e) : e)
+              .toList(),
+        );
+      }
+      return MapEntry(key, value);
+    });
+  }
+
+  static Map<String, dynamic> _fromFirestore(Map<String, dynamic> data) {
+    return data.map((key, value) {
+      if (value is Timestamp) {
+        return MapEntry(key, value.toDate().toIso8601String());
+      } else if (value is Map<String, dynamic>) {
+        return MapEntry(key, _fromFirestore(value));
+      } else if (value is List) {
+        return MapEntry(
+          key,
+          value
+              .map((e) => e is Map<String, dynamic> ? _fromFirestore(e) : e)
+              .toList(),
+        );
+      }
+      return MapEntry(key, value);
+    });
+  }
+
+  static const _dateKeys = {
+    'createdAt', 'updatedAt', 'lastInvoiceDate',
+  };
+
+  static DateTime? _tryParseDate(String key, String value) {
+    if (!_dateKeys.contains(key)) return null;
+    return DateTime.tryParse(value);
   }
 }
