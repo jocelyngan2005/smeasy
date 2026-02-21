@@ -1,0 +1,12 @@
+{
+  "name": "myinvoismate-seed",
+  "version": "1.0.0",
+  "description": "Firestore seed script for MyInvoisMate",
+  "scripts": {
+    "seed": "node seed_firestore.js",
+    "seed:wipe": "node seed_firestore.js --wipe"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
