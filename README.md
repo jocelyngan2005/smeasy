@@ -33,6 +33,28 @@ SME-EASY is a Gemini-powered invoicing and compliance platform that automates in
 
 ---
 
+## 🌍 SDG Alignment
+
+SME-EASY directly supports two United Nations Sustainable Development Goals:
+
+### SDG 8 — Decent Work & Economic Growth
+> *"Promote sustained, inclusive and sustainable economic growth, full and productive employment and decent work for all."*
+
+- Lowers the barrier to formal business compliance for micro and small enterprises, enabling them to participate in the digital economy without needing dedicated accounting staff.
+- Reduces the administrative burden on SME owners, freeing time to focus on productive business activities.
+- Supports economic formalisation by easing the transition to mandatory e-invoicing, helping SMEs avoid penalties that could threaten jobs and livelihoods.
+- Promotes financial inclusion by making tax compliance accessible to businesses that lack the resources for enterprise ERP systems.
+
+### SDG 9 — Industry, Innovation & Infrastructure
+> *"Build resilient infrastructure, promote inclusive and sustainable industrialisation and foster innovation."*
+
+- Leverages cutting-edge AI (Google Gemini multimodal, Vertex AI Search) to innovate the invoicing and compliance workflow for an underserved segment.
+- Contributes to Malaysia's digital infrastructure by integrating directly with the national LHDN MyInvois API, helping to build a robust e-invoicing ecosystem.
+- Demonstrates practical, real-world application of AI and cloud technologies (Firebase, Google Maps Platform) to solve public-sector compliance challenges.
+- Encourages technology adoption among SMEs, accelerating their digitisation and resilience.
+
+---
+
 ## 👥 User Feedback & Iteration
 
 We conducted qualitative interviews and usability testing with a diverse group of stakeholders to validate the problem and refine the solution.
@@ -71,28 +93,6 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
 
 ---
 
-## 🌍 SDG Alignment
-
-SME-EASY directly supports two United Nations Sustainable Development Goals:
-
-### SDG 8 — Decent Work & Economic Growth
-> *"Promote sustained, inclusive and sustainable economic growth, full and productive employment and decent work for all."*
-
-- Lowers the barrier to formal business compliance for micro and small enterprises, enabling them to participate in the digital economy without needing dedicated accounting staff.
-- Reduces the administrative burden on SME owners, freeing time to focus on productive business activities.
-- Supports economic formalisation by easing the transition to mandatory e-invoicing, helping SMEs avoid penalties that could threaten jobs and livelihoods.
-- Promotes financial inclusion by making tax compliance accessible to businesses that lack the resources for enterprise ERP systems.
-
-### SDG 9 — Industry, Innovation & Infrastructure
-> *"Build resilient infrastructure, promote inclusive and sustainable industrialisation and foster innovation."*
-
-- Leverages cutting-edge AI (Google Gemini multimodal, Vertex AI Search) to innovate the invoicing and compliance workflow for an underserved segment.
-- Contributes to Malaysia's digital infrastructure by integrating directly with the national LHDN MyInvois API, helping to build a robust e-invoicing ecosystem.
-- Demonstrates practical, real-world application of AI and cloud technologies (Firebase, Google Maps Platform) to solve public-sector compliance challenges.
-- Encourages technology adoption among SMEs, accelerating their digitisation and resilience.
-
----
-
 ## 🏗️ Tech Stack
 
 | Layer | Technology |
@@ -123,24 +123,24 @@ SME-EASY directly supports two United Nations Sustainable Development Goals:
 │  └──────────┘  └──────────┘  └────────┬──────────┘  │
 └───────────────────────────────────────│─────────────┘
                                         │
-          ┌─────────────────────────────┼───────────────────────┐
-          │                             │                       │
-          ▼                             ▼                       ▼
-  ┌───────────────┐          ┌─────────────────────┐   ┌──────────────────┐
-  │  Google AI    │          │     Firebase        │   │  Google Maps     │
-  │               │          │                     │   │  Platform        │
-  │ Gemini 2.5    │          │ Firebase Auth       │   │                  │
-  │ Flash (text)  │          │ Cloud Firestore     │   │ Maps SDK         │
-  │               │          │                     │   │ Geocoding API    │
-  │ Gemini 2.5    │          │  /users             │   │                  │
-  │ Flash Vision  │          │  /invoices          │   └──────────────────┘
-  │               │          │  /invoice_drafts    │
-  │ Gemini 2.0    │          │  /customers         │   ┌──────────────────┐
-  │ Flash Exp     │          │  /compliance_alerts │   │  LHDN MyInvois   │
-  │               │          │  /compliance_       │   │  API             │
-  │ Vertex AI     │          │    questions        │   │                  │
-  │ Search        │          │  /support_locations │   │  (Submission &   │
-  └───────────────┘          │  /analytics_cache   │   │   Validation)    │
+                ┌───────────────────────┼───────────────────────┐
+                │                       │                       │
+                ▼                       ▼                       ▼
+        ┌───────────────┐    ┌─────────────────────┐   ┌──────────────────┐
+        │  Google AI    │    │     Firebase        │   │  Google Maps     │
+        │               │    │                     │   │  Platform        │
+        │ Gemini 2.5    │    │ Firebase Auth       │   │                  │
+        │ Flash (text)  │    │ Cloud Firestore     │   │ Maps SDK         │
+        │               │    │                     │   │ Geocoding API    │
+        │ Gemini 2.5    │    │  /users             │   │                  │
+        │ Flash Vision  │    │  /invoices          │   └──────────────────┘
+        │               │    │  /invoice_drafts    │
+        │ Gemini 2.0    │    │  /customers         │   ┌──────────────────┐
+        │ Flash Exp     │    │  /compliance_alerts │   │  LHDN MyInvois   │
+        │               │    │  /compliance_       │   │  API             │
+        │ Vertex AI     │    │    questions        │   │                  │
+        │ Search        │    │  /support_locations │   │  (Submission &   │
+        └───────────────┘    │  /analytics_cache   │   │   Validation)    │
                              └─────────────────────┘   └──────────────────┘
 ```
 
