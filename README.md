@@ -112,22 +112,6 @@ SME-EASY directly supports two United Nations Sustainable Development Goals:
 
 ---
 
-## 🤖 Why Google AI?
-
-Every AI technology choice was deliberate, not incidental:
-
-| Technology | Why we chose it |
-|---|---|
-| **Gemini 2.5 Flash (text)** | Best-in-class instruction-following for structured JSON extraction from free-form voice/text input. The multimodal architecture means we use one SDK for both text and vision tasks, reducing complexity. |
-| **Gemini 2.5 Flash Vision** | Natively handles image + text prompts in a single API call. Extracts buyer TIN, line items, and tax amounts from receipt photos without a separate OCR pipeline. |
-| **Gemini 2.0 Flash Exp** | Lower temperature configuration (0.3) and large context window make it suitable for factual, grounded compliance Q&A — crucial for a regulated domain like tax law. |
-| **Vertex AI Search** | Enterprise-grade semantic search with built-in document chunking, spell correction, and query expansion. Provides verifiable, cited answers from indexed LHDN documents — required for a regulated compliance use case where hallucinations carry legal risk. |
-| **Firebase Authentication** | Zero-infrastructure identity management with Auth state streams that integrate directly with Flutter's Provider pattern. |
-| **Cloud Firestore** | Real-time listeners and user-isolated collections make it ideal for live compliance dashboards and multi-device sync without a custom backend. |
-| **Google Maps Platform** | Only mapping SDK with official Malaysia POI data quality and native Flutter embedding via `google_maps_flutter`. |
-
----
-
 ## 📐 System Architecture
 
 ```
@@ -204,7 +188,8 @@ Every AI technology choice was deliberate, not incidental:
 ## ✨ Implemented Features
 
 ### 1. Authentication
-**Google Technologies:** Firebase Authentication, Cloud Firestore
+**Google Technologies:** Firebase Authentication, Cloud Firestore  
+*Firebase Auth provides zero-infrastructure identity management with Auth state streams that integrate directly with Flutter's Provider pattern. Cloud Firestore offers real-time listeners and user-isolated collections, making it ideal for live compliance dashboards and multi-device sync without a custom backend.*
 
 - Email & password sign-in / sign-up
 - Business registration with TIN, phone, and address fields
@@ -214,7 +199,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 2. Voice-to-Invoice Generation
-**Google Technologies:** Gemini 2.5 Flash (`google_generative_ai`)
+**Google Technologies:** Gemini 2.5 Flash (`google_generative_ai`)  
+*Chosen for best-in-class instruction-following for structured JSON extraction from free-form voice/text input. The multimodal architecture means we use one SDK for both text and vision tasks, reducing complexity.*
 
 - Speak sales details naturally using the device microphone (`speech_to_text`)
 - Text typed input as an alternative to voice
@@ -224,7 +210,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 3. Receipt & Document Scanning
-**Google Technologies:** Gemini 2.5 Flash Vision (multimodal API)
+**Google Technologies:** Gemini 2.5 Flash Vision (multimodal API)  
+*Natively handles image + text prompts in a single API call, extracting buyer TIN, line items, and tax amounts from receipt photos without a separate OCR pipeline.*
 
 - Capture receipts with the device camera or pick from gallery (`image_picker`)
 - Image sent as a multipart request to Gemini Vision
@@ -235,7 +222,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 4. Invoice Management
-**Google Technologies:** Cloud Firestore
+**Google Technologies:** Cloud Firestore  
+*User-isolated Firestore collections and real-time sync give every user a private, instantly updated invoice store — eliminating the need for a custom backend or polling logic.*
 
 - Create, view, update, and soft-delete invoices
 - All invoices stored in `/invoices/{invoiceId}` on Firestore, isolated per user via `createdBy` field
@@ -248,7 +236,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 5. Automated MyInvois Submission
-**Google Technologies:** Cloud Firestore
+**Google Technologies:** Cloud Firestore  
+*Firestore's real-time listeners propagate submission status changes (pending → submitted → accepted/rejected) instantly across devices, giving users live visibility into their compliance standing without manual refreshes.*
 
 - Automatic RM 10,000 threshold detection on each invoice
 - One-tap submission to the LHDN MyInvois API
@@ -259,7 +248,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 6. Compliance Dashboard & Deadline Alerts
-**Google Technologies:** Cloud Firestore, Gemini 2.5 Flash
+**Google Technologies:** Cloud Firestore, Gemini 2.5 Flash  
+*Firestore's live queries power a compliance score that updates the moment an invoice is submitted or rejected. Gemini 2.5 Flash's instruction-following capability generates contextual, actionable recommendations — not generic tips — based on the user's actual invoice data.*
 
 - Real-time compliance score computed from live Firestore invoice data
 - Visual circular progress indicator for compliance health
@@ -271,7 +261,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 7. SME Compliance Knowledge Assistant
-**Google Technologies:** Gemini 2.0 Flash Exp, Vertex AI Search, Cloud Firestore
+**Google Technologies:** Gemini 2.0 Flash Exp, Vertex AI Search, Cloud Firestore  
+*Gemini 2.0 Flash Exp's lower temperature configuration (0.3) and large context window make it suitable for factual, grounded compliance Q&A — crucial for a regulated domain like tax law. Vertex AI Search provides enterprise-grade semantic search with built-in document chunking, spell correction, and query expansion, delivering verifiable, cited answers from indexed LHDN documents — required where hallucinations carry legal risk.*
 
 - Conversational chat interface for LHDN compliance questions
 - Primary path: **Vertex AI Search** performs enterprise-grade semantic search over indexed LHDN compliance documents (configured via `VERTEX_PROJECT_ID`, `VERTEX_DATASTORE_ID`, `VERTEX_API_KEY` in `.env`)
@@ -282,7 +273,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 8. Business Insights Analytics
-**Google Technologies:** Cloud Firestore, Google Fonts
+**Google Technologies:** Cloud Firestore, Google Fonts  
+*Firestore's per-user analytics cache enables fast aggregation queries without a dedicated data warehouse. Google Fonts delivers consistent, high-quality typography across Android, iOS, and Web from a single cross-platform source.*
 
 - Revenue trend charts over 6 months (`fl_chart`, `syncfusion_flutter_charts`)
 - Invoice status distribution (pie/bar chart)
@@ -293,7 +285,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 9. Support Locator
-**Google Technologies:** Google Maps Flutter SDK, Geolocator, Geocoding
+**Google Technologies:** Google Maps Flutter SDK, Geolocator, Geocoding  
+*Google Maps Platform is the only mapping SDK with official Malaysia POI data quality and native Flutter embedding via `google_maps_flutter`.*
 
 - Interactive Google Maps view centred on the user's current GPS location
 - Pins for nearby LHDN offices, SME digital centres, and tax consultation services
@@ -305,7 +298,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 10. Customer Management
-**Google Technologies:** Cloud Firestore
+**Google Technologies:** Cloud Firestore  
+*User-scoped Firestore collections keep the customer directory private and in sync across devices, and the same customer records auto-populate buyer fields in new invoices — removing redundant data entry.*
 
 - Dedicated customer list screen with search
 - Add, view, and edit customers stored in `/customers/{customerId}` on Firestore
@@ -314,7 +308,8 @@ Every AI technology choice was deliberate, not incidental:
 ---
 
 ### 11. Notifications
-**Google Technologies:** Cloud Firestore
+**Google Technologies:** Cloud Firestore  
+*Real-time listeners on the `/compliance_alerts` collection surface deadline warnings and submission reminders the moment they are written server-side, without requiring push notification infrastructure.*
 
 - In-app notification screen listing compliance alerts and submission reminders
 - Alerts pulled from `/compliance_alerts` Firestore collection in real time
