@@ -93,6 +93,39 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
 
 ---
 
+## 📊 Success Metrics & Scalability
+
+### Measurable Impact Goals
+
+| Metric | Target (6 months post-launch) |
+|---|---|
+| Invoice creation time | Reduce from ~15 min (manual) to < 2 min via voice/scan |
+| MyInvois submission errors | < 5% rejection rate vs. industry average of ~20% for first-time filers |
+| Compliance score | ≥ 80% of active users maintain a compliance score above 70 |
+| SME onboarding | 500 SME users in the first 3 months |
+| Knowledge Assistant deflection | 60% of compliance queries resolved without contacting LHDN directly |
+
+### Scaling Roadmap
+
+#### Phase 1 *(Months 1–3)*
+- **Target:** 50 micro-businesses — vendors, small cafes.
+- **Focus:** Refine Voice-to-Invoice accuracy for local accents and slang (Manglish / Bahasa Melayu) using Gemini's multimodal capabilities.
+- **Milestone:** Android release; Firebase backend live; Gemini + Vertex AI Search connected.
+
+#### Phase 2 *(Months 4–9)*
+- **Target:** Specific sectors — retail, logistics, professional services.
+- **Scaling tech:** Migrate to **Google Cloud Run** with auto-scaling to handle traffic surges during peak tax seasons and month-end closing, without manual server management.
+- **Integration:** Move from mocked LHDN API to a formal **MyInvois sandbox integration**, then production.
+- **Milestone:** Multi-language support (BM, EN, ZH); push notifications for deadline alerts.
+
+#### Phase 3 *(Year 1+)*
+- **Feature growth:** Multi-user support for larger SMEs with accounting teams; Cloud Functions for automated compliance checks.
+- **Marketplace:** Integrate with **Malaysian banking APIs** for one-click invoice payment once an invoice is validated.
+- **Regional potential:** Adapt the compliance engine for other Southeast Asian countries implementing similar digital tax regimes (Indonesia PPN, Thailand VAT e-filing).
+- **Milestone:** Accountant / tax agent portal; open API for POS system integrations.
+
+---
+
 ## 🏗️ Tech Stack
 
 | Layer | Technology |
@@ -149,39 +182,6 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
 - **Receipt → Invoice**: Camera/Gallery → `GeminiVisionReceiptService` (multimodal) → Firestore `/invoices`
 - **Compliance Q&A**: User query → `VertexAISearchService` (primary) → `KnowledgeAssistantService` Gemini RAG (fallback) → Firestore `/compliance_questions`
 - **Dashboard**: Firestore live queries → `ComplianceService` + `AnalyticsService` → `HomeScreen`
-
----
-
-## 📊 Success Metrics & Scalability
-
-### Measurable Impact Goals
-
-| Metric | Target (6 months post-launch) |
-|---|---|
-| Invoice creation time | Reduce from ~15 min (manual) to < 2 min via voice/scan |
-| MyInvois submission errors | < 5% rejection rate vs. industry average of ~20% for first-time filers |
-| Compliance score | ≥ 80% of active users maintain a compliance score above 70 |
-| SME onboarding | 500 SME users in the first 3 months |
-| Knowledge Assistant deflection | 60% of compliance queries resolved without contacting LHDN directly |
-
-### Scaling Roadmap
-
-#### Phase 1 *(Months 1–3)*
-- **Target:** 50 micro-businesses — vendors, small cafes.
-- **Focus:** Refine Voice-to-Invoice accuracy for local accents and slang (Manglish / Bahasa Melayu) using Gemini's multimodal capabilities.
-- **Milestone:** Android release; Firebase backend live; Gemini + Vertex AI Search connected.
-
-#### Phase 2 *(Months 4–9)*
-- **Target:** Specific sectors — retail, logistics, professional services.
-- **Scaling tech:** Migrate to **Google Cloud Run** with auto-scaling to handle traffic surges during peak tax seasons and month-end closing, without manual server management.
-- **Integration:** Move from mocked LHDN API to a formal **MyInvois sandbox integration**, then production.
-- **Milestone:** Multi-language support (BM, EN, ZH); push notifications for deadline alerts.
-
-#### Phase 3 *(Year 1+)*
-- **Feature growth:** Multi-user support for larger SMEs with accounting teams; Cloud Functions for automated compliance checks.
-- **Marketplace:** Integrate with **Malaysian banking APIs** for one-click invoice payment once an invoice is validated.
-- **Regional potential:** Adapt the compliance engine for other Southeast Asian countries implementing similar digital tax regimes (Indonesia PPN, Thailand VAT e-filing).
-- **Milestone:** Accountant / tax agent portal; open API for POS system integrations.
 
 ---
 
