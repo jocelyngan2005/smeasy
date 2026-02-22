@@ -53,6 +53,74 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleForgotPassword() async {
+    // Pre-fill with whatever is already in the email field
+    final controller = TextEditingController(
+      text: _emailController.text.trim(),
+    );
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter your account email and we\'ll send you a reset link.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.email_outlined),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Send Link'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final email = controller.text.trim();
+    if (email.isEmpty || !Helpers.isValidEmail(email)) {
+      Helpers.showErrorSnackbar(context, 'Please enter a valid email address.');
+      return;
+    }
+
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      await authService.resetPassword(email);
+      if (mounted) {
+        Helpers.showSuccessSnackbar(
+          context,
+          'Password reset link sent to $email. Check your inbox.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Helpers.showErrorSnackbar(
+          context,
+          'Could not send reset email. Make sure the email is registered.',
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -172,13 +240,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () {
-                            // TODO: Implement forgot password
-                            Helpers.showInfoSnackbar(
-                              context,
-                              'Password reset link sent to your email',
-                            );
-                          },
+                          onPressed: _handleForgotPassword,
                           child: const Text('Forgot Password?'),
                         ),
                       ),

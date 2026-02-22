@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../backend/auth/services/auth_service.dart';
 import '../../backend/invoice/models/invoice_model.dart';
 import '../../backend/invoice/models/invoice_adapter.dart';
-import '../../backend/invoice/services/invoice_service.dart';
+import '../../backend/invoice/services/firestore_invoice_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import 'invoice_detail_screen.dart';
@@ -15,7 +17,7 @@ class InvoiceListScreen extends StatefulWidget {
 }
 
 class _InvoiceListScreenState extends State<InvoiceListScreen> {
-  final _invoiceService = InvoiceService();
+  final _invoiceService = FirestoreInvoiceService();
   final _searchController = TextEditingController();
   List<Invoice> _invoices = [];
   List<Invoice> _filteredInvoices = [];
@@ -47,7 +49,8 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
   Future<void> _loadInvoices() async {
     setState(() => _isLoading = true);
     try {
-      final invoices = await _invoiceService.getInvoices();
+      final userId = context.read<AuthService>().currentUserId ?? '';
+      final invoices = await _invoiceService.getInvoicesByUser(userId);
       setState(() {
         _invoices = invoices;
         _applyFilter();

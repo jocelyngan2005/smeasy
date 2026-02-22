@@ -9,8 +9,14 @@
  *
  *   2. In this folder run:
  *      npm install
- *      npm run seed           # seed all collections
- *      npm run seed:wipe      # wipe collections first, then re-seed
+ *      npm run seed                                # seed with default UID 'test-user-001'
+ *      npm run seed -- --uid=<your_firebase_uid>   # seed with your real Firebase Auth UID
+ *      npm run seed:wipe -- --uid=<uid>            # wipe + re-seed with your real UID
+ *
+ *   How to find your Firebase Auth UID:
+ *     - Sign in to the app and check the Firestore query error in logcat — the UID appears
+ *       after "createdBy==" in the error message.
+ *     - Or: Firebase Console → Authentication → Users → copy the UID column.
  */
 
 const admin = require('firebase-admin');
@@ -28,6 +34,35 @@ db.settings({ databaseId: '(default)', ignoreUndefinedProperties: true });
 const TS = (date) => admin.firestore.Timestamp.fromDate(new Date(date));
 
 const WIPE = process.argv.includes('--wipe');
+
+// --uid=<firebase_uid>  Override the default seed owner UID.
+// Use this when your real Firebase Auth UID differs from the placeholder
+// (e.g. you saw "createdBy==scP8LrwpCOgBrqJouQxlqAqnsMt2" in a Firestore error).
+const UID_ARG = process.argv.find((a) => a.startsWith('--uid='));
+const SEED_UID = UID_ARG ? UID_ARG.split('=')[1] : 'test-user-001';
+
+if (SEED_UID !== 'test-user-001') {
+  console.log(`\n🔑  Seeding with custom UID: ${SEED_UID}`);
+}
+
+/**
+ * Deep-replace every 'test-user-001' occurrence with SEED_UID.
+ * Uses a recursive walk instead of JSON.stringify so that Firestore Timestamp
+ * instances are preserved (JSON.stringify would convert them to plain maps,
+ * causing a 'type _Map<String,dynamic> is not a subtype of Timestamp' crash
+ * when the Flutter app reads the documents back).
+ */
+function withUid(data) {
+  if (data instanceof admin.firestore.Timestamp) return data;
+  if (Array.isArray(data)) return data.map(withUid);
+  if (data !== null && typeof data === 'object') {
+    return Object.fromEntries(
+      Object.entries(data).map(([k, v]) => [k, withUid(v)])
+    );
+  }
+  if (typeof data === 'string') return data.split('test-user-001').join(SEED_UID);
+  return data;
+}
 
 // ─────────────────────────────────────────────
 // COLLECTION NAMES (mirrors FirestoreCollections.dart)
@@ -853,6 +888,51 @@ async function seedCollection(name, documents, idField = 'id') {
 }
 
 // ─────────────────────────────────────────────
+// AUTH USERS
+// ─────────────────────────────────────────────
+
+// Firebase Auth users whose UIDs MUST match the `createdBy` field used in
+// the seeded Firestore documents. Without this, every Firestore query that
+// filters by `createdBy == userId` returns zero results after login.
+const AUTH_USERS = [
+  {
+    uid: 'test-user-001',
+    email: 'aida@smeasy.my',
+    password: 'Test@12345',
+    displayName: 'Aida Binti Rahman',
+  },
+  {
+    uid: 'test-user-002',
+    email: 'haziq@techsolutions.my',
+    password: 'Test@12345',
+    displayName: 'Haziq',
+  },
+];
+
+async function seedAuthUsers() {
+  console.log('── Creating Firebase Auth users ──────────────');
+  for (const user of withUid(AUTH_USERS)) {
+    try {
+      await admin.auth().createUser(user);
+      console.log(`     ✅ Created auth user: ${user.email} (uid: ${user.uid})`);
+    } catch (err) {
+      if (err.code === 'auth/uid-already-exists' || err.code === 'auth/email-already-exists') {
+        // Update the existing user to ensure password matches
+        await admin.auth().updateUser(user.uid, {
+          email: user.email,
+          password: user.password,
+          displayName: user.displayName,
+        }).catch(() => {}); // ignore if UID doesn't match email; just log
+        console.log(`     ♻️  Auth user already exists (updated): ${user.email}`);
+      } else {
+        console.warn(`     ⚠️  Could not create auth user ${user.email}:`, err.message);
+      }
+    }
+  }
+  console.log();
+}
+
+// ─────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────
 
@@ -862,6 +942,7 @@ async function main() {
   console.log(`    Mode   : ${WIPE ? 'WIPE + SEED' : 'SEED (merge)'}\n`);
 
   await preflight();
+  await seedAuthUsers();
 
   if (WIPE) {
     console.log('── Wiping existing data ──────────────────────');
@@ -872,14 +953,14 @@ async function main() {
   }
 
   console.log('── Writing seed data ─────────────────────────');
-  await seedCollection(COLLECTIONS.users, USERS);
-  await seedCollection(COLLECTIONS.customers, CUSTOMERS);
-  await seedCollection(COLLECTIONS.invoices, INVOICES);
-  await seedCollection(COLLECTIONS.invoiceDrafts, INVOICE_DRAFTS);
-  await seedCollection(COLLECTIONS.complianceAlerts, COMPLIANCE_ALERTS);
-  await seedCollection(COLLECTIONS.complianceQuestions, COMPLIANCE_QUESTIONS);
-  await seedCollection(COLLECTIONS.supportLocations, SUPPORT_LOCATIONS);
-  await seedCollection(COLLECTIONS.analyticsCache, ANALYTICS_CACHE);
+  await seedCollection(COLLECTIONS.users, withUid(USERS));
+  await seedCollection(COLLECTIONS.customers, withUid(CUSTOMERS));
+  await seedCollection(COLLECTIONS.invoices, withUid(INVOICES));
+  await seedCollection(COLLECTIONS.invoiceDrafts, withUid(INVOICE_DRAFTS));
+  await seedCollection(COLLECTIONS.complianceAlerts, withUid(COMPLIANCE_ALERTS));
+  await seedCollection(COLLECTIONS.complianceQuestions, withUid(COMPLIANCE_QUESTIONS));
+  await seedCollection(COLLECTIONS.supportLocations, withUid(SUPPORT_LOCATIONS));
+  await seedCollection(COLLECTIONS.analyticsCache, withUid(ANALYTICS_CACHE));
 
   console.log('\n✨  All collections seeded successfully!');
   console.log('\n📋  Summary:');
@@ -891,7 +972,16 @@ async function main() {
   console.log(`    compliance_questions: ${COMPLIANCE_QUESTIONS.length}`);
   console.log(`    support_locations   : ${SUPPORT_LOCATIONS.length}`);
   console.log(`    analytics_cache     : ${ANALYTICS_CACHE.length}`);
-  console.log('\n💡  Login with user ID: test-user-001  (aida@smeasy.my)');
+  console.log('\n💡  Login credentials:');
+  console.log('      Email   : aida@smeasy.my');
+  console.log('      Password: Test@12345');
+  console.log(`      UID     : ${SEED_UID}  (matches all seeded createdBy fields)`);
+  if (SEED_UID === 'test-user-001') {
+    console.log('\n⚠️   The UID is the placeholder \'test-user-001\'. If your app shows no data,');
+    console.log('    re-run with your real Firebase Auth UID:');
+    console.log('      npm run seed:wipe -- --uid=<your_uid>');
+    console.log('    (Find your UID in Firebase Console → Authentication → Users)');
+  }
   process.exit(0);
 }
 

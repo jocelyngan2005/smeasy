@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../backend/auth/services/auth_service.dart';
 import '../../backend/compliance/services/compliance_service.dart';
-import '../../backend/invoice/services/invoice_service.dart';
+import '../../backend/invoice/services/firestore_invoice_service.dart';
 import '../../backend/analytics/services/analytics_service.dart';
 import '../../backend/analytics/models/analytics_model.dart';
 import '../../utils/constants.dart';
@@ -19,7 +19,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _complianceService = ComplianceService();
-  final _invoiceService = InvoiceService();
+  final _invoiceService = FirestoreInvoiceService();
   final _analyticsService = AnalyticsService();
   bool _isLoading = true;
   int _pendingInvoices = 0;
@@ -43,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final userId = authService.currentUserId ?? '';
 
       final stats = await _complianceService.getComplianceStats(userId);
-      final invoices = await _invoiceService.getInvoices();
+      final invoices = await _invoiceService.getInvoicesByUser(userId);
       final analytics = await _analyticsService.getAnalytics(userId);
       final recommendations = _complianceService.getComplianceRecommendations();
 

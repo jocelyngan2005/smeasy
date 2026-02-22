@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'backend/auth/services/auth_service.dart';
 import 'screens/auth/login_screen.dart';
@@ -31,11 +32,21 @@ class MyApp extends StatelessWidget {
         title: AppConstants.appName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
-        home: Consumer<AuthService>(
-          builder: (context, authService, _) {
-            return authService.isAuthenticated
-                ? const MainNavigationScreen()
-                : const LoginScreen();
+        home: StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            // Still waiting for the persisted session to be restored
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            // Signed in → main app
+            if (snapshot.hasData && snapshot.data != null) {
+              return const MainNavigationScreen();
+            }
+            // Not signed in → login
+            return const LoginScreen();
           },
         ),
       ),

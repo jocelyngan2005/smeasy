@@ -40,7 +40,7 @@ class UserModel {
       tin: data['tin'] as String? ?? '',
       phone: data['phone'] as String? ?? '',
       address: data['address'] as String? ?? '',
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: _parseTimestamp(data['createdAt']),
       isVerified: data['isVerified'] as bool? ?? false,
     );
   }
@@ -57,6 +57,27 @@ class UserModel {
       'createdAt': Timestamp.fromDate(createdAt),
       'isVerified': isVerified,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal helpers
+  // ---------------------------------------------------------------------------
+
+  /// Safely parses a Firestore [createdAt] field that may arrive as a
+  /// native [Timestamp], a plain [Map] (e.g. seeded via Node.js admin SDK
+  /// with `{_seconds, _nanoseconds}`), or a [String].
+  static DateTime _parseTimestamp(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is Map) {
+      final seconds = (value['_seconds'] ?? value['seconds']) as int?;
+      if (seconds != null) {
+        return DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+      }
+    }
+    if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.now();
+    }
+    return DateTime.now();
   }
 
   // ---------------------------------------------------------------------------
