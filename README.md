@@ -46,6 +46,29 @@ We conducted qualitative interviews and usability testing with a diverse group o
 | 3 | **"I don't know until it's too late."** — Users only realised they had missed a submission deadline after receiving a warning letter. | Built a **Compliance Dashboard** with a real-time score, deadline alerts stored in Firestore, and proactive AI-generated recommendations surfaced on the home screen. |
 | 4 | **"Where do I go for help?"** — Users wanted to speak to someone but didn't know where the nearest LHDN office or SME digital hub was. | Integrated **Google Maps** with geolocated pins for LHDN offices, SME centres, and tax consultation services, with tap-to-call and tap-to-navigate. |
 
+### Iteration Timeline
+
+Our development followed a 3-stage feedback loop to ensure the app remained relevant as the LHDN 2026 mandate evolved.
+
+#### Phase 1
+- **Focus:** Core manual invoicing flow.
+- **The Problem:** Internal testing showed that manual data entry for a standard 10-item invoice took over 4 minutes — completely unfeasible for busy Malaysian micro-retailers.
+- **The Iteration:** We pivoted from manual forms to an **AI-First entry system**, implementing Gemini 2.5 Flash to handle natural language voice commands and messy handwritten receipt scans via `GeminiInvoiceService` and `GeminiVisionReceiptService`. Voice-to-Invoice and Receipt Scanner were elevated from optional features to the primary creation flows in the AI Assistant screen.
+
+---
+
+#### Phase 2
+- **Focus:** Compliance validation.
+- **The Problem:** News broke regarding the RM 10,000 "Consolidation Trap" (LHDN Specific Guideline v4.6). Users were confused about when they could consolidate sales and when they needed individual e-invoices.
+- **The Iteration:** We built the **"Compliance Guard" logic**. The `ComplianceSettings.requiresSubmission()` check in `invoice_config.dart` flags any transaction ≥ RM 10,000 for mandatory individual submission. The `InvoiceOrchestrator` enforces this before allowing MyInvois submission, and the invoice detail screen surfaces a contextual warning — preventing accidental consolidation of above-threshold invoices. Relaxation period tracking (2026–2027) is also built in.
+
+---
+
+#### Phase 3 
+- **Focus:** UX and transparency.
+- **The Problem:** During usability tests, users felt "compliance anxiety" even with the AI. They needed to see exactly how close they were to the RM 1 million mandatory threshold and whether their current month's submissions were on track.
+- **The Iteration:** We added the **Home Dashboard compliance score and progress bar**, and integrated **Vertex AI Search** into the Knowledge Assistant. Users can now ask "Do I need to submit this month?" and receive a grounded response based on the latest February 2026 LHDN guidelines — not a generic AI guess.
+
 ---
 
 ## 🌍 SDG Alignment
