@@ -62,7 +62,7 @@ class ComplianceService {
         }
       }
 
-      if (requiresSubmission && status == 'validated') {
+      if (requiresSubmission && status == 'submitted') {
         final dueTs = data['dueDate'];
         if (dueTs is Timestamp && dueTs.toDate().isBefore(now)) {
           overdueInvoices++;

@@ -21,12 +21,12 @@ class AppConstants {
   static const String receiptsCollection = 'receipts';
   static const String complianceCollection = 'compliance';
 
-  // Invoice Status
-  static const String statusDraft = 'draft';
-  static const String statusPending = 'pending';
-  static const String statusSubmitted = 'submitted';
-  static const String statusApproved = 'approved';
-  static const String statusRejected = 'rejected';
+  // Invoice Status — aligned with LHDN SDK values
+  static const String statusDraft = 'draft';       // Value 5: local draft, not yet submitted
+  static const String statusSubmitted = 'submitted'; // Value 1: passed initial structure validations
+  static const String statusValid = 'valid';         // Value 2: successful validation
+  static const String statusInvalid = 'invalid';     // Value 3: validation issues
+  static const String statusCancelled = 'cancelled'; // Value 4: cancelled by issuer
 
   // Compliance Periods
   static const String relaxationPeriod = '2026-2027';
@@ -47,10 +47,10 @@ class AppColors {
 
   // Status Colors
   static const Color statusDraft = Color(0xFF9E9E9E);
-  static const Color statusPending = Color(0xFFFF9800);
-  static const Color statusSubmitted = Color(0xFF2196F3);
-  static const Color statusApproved = Color(0xFF4CAF50);
-  static const Color statusRejected = Color(0xFFF44336);
+  static const Color statusSubmitted = Color(0xFFFF9800);
+  static const Color statusValid = Color(0xFF4CAF50);
+  static const Color statusInvalid = Color(0xFFF44336);
+  static const Color statusCancelled = Color(0xFF9E9E9E);
 }
 
 class AppTheme {

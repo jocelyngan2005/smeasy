@@ -166,7 +166,7 @@ class InvoiceService {
         subtotal: 16000.00,
         taxAmount: 0.0,
         totalAmount: 16000.00,
-        status: AppConstants.statusPending,
+        status: AppConstants.statusSubmitted,
         createdBy: 'user123',
       ),
     ]);

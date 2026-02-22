@@ -761,12 +761,12 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     switch (status.toLowerCase()) {
       case 'submitted':
         return Icons.send;
-      case 'approved':
+      case 'valid':
         return Icons.check_circle;
-      case 'rejected':
+      case 'invalid':
         return Icons.cancel;
-      case 'pending':
-        return Icons.pending;
+      case 'cancelled':
+        return Icons.block;
       default:
         return Icons.drafts;
     }

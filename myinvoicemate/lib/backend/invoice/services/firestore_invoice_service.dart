@@ -97,7 +97,7 @@ class FirestoreInvoiceService {
         .where('createdBy', isEqualTo: userId)
         .where('isDeleted', isEqualTo: false)
         .where('requiresSubmission', isEqualTo: true)
-        .where('complianceStatus', isEqualTo: ComplianceStatus.validated.name)
+        .where('complianceStatus', isEqualTo: ComplianceStatus.submitted.name)
         .get();
     return snap.docs
         .map((d) => Invoice.fromJson(_fromFirestoreMap(d.data())..['id'] = d.id))
@@ -182,12 +182,12 @@ class FirestoreInvoiceService {
   // ANALYTICS (aggregated queries)
   // =========================================================================
 
-  /// Total revenue for [userId] across all accepted invoices.
+  /// Total revenue for [userId] across all valid invoices.
   Future<double> getTotalRevenue(String userId) async {
     final snap = await _invoices
         .where('createdBy', isEqualTo: userId)
         .where('isDeleted', isEqualTo: false)
-        .where('complianceStatus', isEqualTo: ComplianceStatus.accepted.name)
+        .where('complianceStatus', isEqualTo: ComplianceStatus.valid.name)
         .get();
     return snap.docs.fold<double>(
       0.0,
@@ -228,9 +228,9 @@ class FirestoreInvoiceService {
     for (final doc in snap.docs) {
       final data = doc.data();
       final status = data['complianceStatus'] as String?;
-      if (status == ComplianceStatus.validated.name) pending++;
+      if (status == ComplianceStatus.submitted.name) pending++;
       if (status == ComplianceStatus.submitted.name ||
-          status == ComplianceStatus.accepted.name) submitted++;
+          status == ComplianceStatus.valid.name) submitted++;
       revenue += ((data['totalAmount'] as num?) ?? 0).toDouble();
     }
 

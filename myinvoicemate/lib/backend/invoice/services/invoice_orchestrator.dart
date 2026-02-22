@@ -284,7 +284,7 @@ class InvoiceGenerationOrchestrator {
       }
 
       if (invoice.complianceStatus == ComplianceStatus.submitted ||
-          invoice.complianceStatus == ComplianceStatus.accepted) {
+          invoice.complianceStatus == ComplianceStatus.valid) {
         return SubmissionResult(
           success: false,
           message: 'Invoice already submitted',

@@ -383,10 +383,10 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
           children: [
             _buildFilterOption('All', 'all'),
             _buildFilterOption('Draft', AppConstants.statusDraft),
-            _buildFilterOption('Pending', AppConstants.statusPending),
             _buildFilterOption('Submitted', AppConstants.statusSubmitted),
-            _buildFilterOption('Approved', AppConstants.statusApproved),
-            _buildFilterOption('Rejected', AppConstants.statusRejected),
+            _buildFilterOption('Valid', AppConstants.statusValid),
+            _buildFilterOption('Invalid', AppConstants.statusInvalid),
+            _buildFilterOption('Cancelled', AppConstants.statusCancelled),
           ],
         ),
       ),

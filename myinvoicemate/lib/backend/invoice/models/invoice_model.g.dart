@@ -90,10 +90,9 @@ const _$InvoiceTypeEnumMap = {
 
 const _$ComplianceStatusEnumMap = {
   ComplianceStatus.draft: 'draft',
-  ComplianceStatus.validated: 'validated',
   ComplianceStatus.submitted: 'submitted',
-  ComplianceStatus.accepted: 'accepted',
-  ComplianceStatus.rejected: 'rejected',
+  ComplianceStatus.valid: 'valid',
+  ComplianceStatus.invalid: 'invalid',
   ComplianceStatus.cancelled: 'cancelled',
 };
 

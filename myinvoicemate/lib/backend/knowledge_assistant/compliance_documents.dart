@@ -126,9 +126,9 @@ The following are EXEMPT from mandatory e-invoicing:
 1. Generate invoice in compliant format (JSON/XML)
 2. Validate invoice structure locally
 3. Submit to MyInvois API endpoint
-4. Receive validation response (acceptance/rejection)
-5. If accepted: Receive unique MyInvois Reference ID
-6. If rejected: Review error codes, correct, and resubmit
+4. Receive validation response (valid/invalid)
+5. If valid: Receive unique MyInvois Reference ID
+6. If invalid: Review error codes, correct, and resubmit
 7. Store MyInvois confirmation for 7 years
 
 ### 5.2 Submission Timeline
@@ -205,7 +205,7 @@ The following are EXEMPT from mandatory e-invoicing:
 **A:** For B2B transactions RM10k+, buyer MUST have TIN. Transaction cannot proceed without valid TIN. For B2C transactions, buyer TIN not required.
 
 ### Q: Can I edit submitted invoice?
-**A:** No. Once accepted by MyInvois, invoice is immutable. Use Credit Note or Debit Note for corrections.
+**A:** No. Once a document becomes valid in MyInvois, it is immutable. Use Credit Note or Debit Note for corrections.
 
 ### Q: What format should invoices be in?
 **A:** MyInvois accepts JSON or XML format following the official schema. Most accounting software auto-generates compliant formats.
@@ -275,7 +275,7 @@ The following are EXEMPT from mandatory e-invoicing:
       },
       {
         'question': 'Can I edit a submitted invoice?',
-        'answer': 'No. Once accepted by MyInvois, invoices are immutable. You must issue a Credit Note or Debit Note for corrections.',
+        'answer': 'No. Once a document becomes valid in MyInvois, invoices are immutable. You must issue a Credit Note or Debit Note for corrections.',
         'category': 'Technical',
       },
       {
@@ -312,7 +312,7 @@ The following are EXEMPT from mandatory e-invoicing:
       'Train all staff on MyInvois procedures',
       'Set up alerts for submission deadlines',
       'Maintain updated contact details in MyInvois profile',
-      'Review rejected invoices within 24 hours and resubmit',
+      'Review invalid invoices within 24 hours and resubmit',
       'Take advantage of the relaxation period to consolidate smaller invoices',
     ];
   }

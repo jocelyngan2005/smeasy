@@ -27,14 +27,14 @@ class Helpers {
     switch (status.toLowerCase()) {
       case AppConstants.statusDraft:
         return AppColors.statusDraft;
-      case AppConstants.statusPending:
-        return AppColors.statusPending;
       case AppConstants.statusSubmitted:
         return AppColors.statusSubmitted;
-      case AppConstants.statusApproved:
-        return AppColors.statusApproved;
-      case AppConstants.statusRejected:
-        return AppColors.statusRejected;
+      case AppConstants.statusValid:
+        return AppColors.statusValid;
+      case AppConstants.statusInvalid:
+        return AppColors.statusInvalid;
+      case AppConstants.statusCancelled:
+        return AppColors.statusCancelled;
       default:
         return AppColors.textSecondary;
     }

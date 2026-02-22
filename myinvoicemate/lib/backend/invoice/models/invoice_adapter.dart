@@ -61,17 +61,18 @@ extension InvoiceBuilder on Invoice {
     // Map status string to ComplianceStatus enum
     ComplianceStatus complianceStatus;
     switch (status.toLowerCase()) {
+      case 'validated': // legacy — map to submitted
       case 'submitted':
         complianceStatus = ComplianceStatus.submitted;
         break;
-      case 'accepted':
-        complianceStatus = ComplianceStatus.accepted;
+      case 'valid':
+        complianceStatus = ComplianceStatus.valid;
         break;
-      case 'rejected':
-        complianceStatus = ComplianceStatus.rejected;
+      case 'invalid':
+        complianceStatus = ComplianceStatus.invalid;
         break;
-      case 'validated':
-        complianceStatus = ComplianceStatus.validated;
+      case 'cancelled':
+        complianceStatus = ComplianceStatus.cancelled;
         break;
       default:
         complianceStatus = ComplianceStatus.draft;
@@ -244,14 +245,12 @@ extension InvoiceCompat on Invoice {
     switch (complianceStatus) {
       case ComplianceStatus.draft:
         return 'draft';
-      case ComplianceStatus.validated:
-        return 'validated';
       case ComplianceStatus.submitted:
         return 'submitted';
-      case ComplianceStatus.accepted:
-        return 'accepted';
-      case ComplianceStatus.rejected:
-        return 'rejected';
+      case ComplianceStatus.valid:
+        return 'valid';
+      case ComplianceStatus.invalid:
+        return 'invalid';
       case ComplianceStatus.cancelled:
         return 'cancelled';
     }

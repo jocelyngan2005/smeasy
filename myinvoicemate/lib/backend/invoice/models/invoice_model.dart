@@ -318,14 +318,12 @@ enum InvoiceType {
 enum ComplianceStatus {
   @JsonValue('draft')
   draft,
-  @JsonValue('validated')
-  validated,
   @JsonValue('submitted')
   submitted,
-  @JsonValue('accepted')
-  accepted,
-  @JsonValue('rejected')
-  rejected,
+  @JsonValue('valid')
+  valid,
+  @JsonValue('invalid')
+  invalid,
   @JsonValue('cancelled')
   cancelled,
 }
