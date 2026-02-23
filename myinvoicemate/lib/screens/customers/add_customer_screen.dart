@@ -100,7 +100,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
     try {
       final authService = Provider.of<AuthService>(context, listen: false);
-      final userId = authService.currentUser?.id;
+      final userId = authService.currentUserId;
 
       if (userId == null) {
         throw Exception('User not logged in');

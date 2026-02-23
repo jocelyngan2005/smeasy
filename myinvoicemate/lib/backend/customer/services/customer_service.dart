@@ -16,21 +16,18 @@ class CustomerService {
       _db.collection(FirestoreCollections.customers);
 
   /// All customers for [userId], sorted alphabetically by name.
+  ///
+  /// Throws on Firestore errors (e.g. missing index, permission denied) so
+  /// callers can surface a meaningful message to the user.
   Future<List<Customer>> getCustomers({String? userId}) async {
     if (userId == null) return [];
-    try {
-      final snap = await _customers
-          .where('createdBy', isEqualTo: userId)
-          .orderBy('name')
-          .get();
-      return snap.docs
-          .map((d) => Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id))
-          .toList();
-    } catch (e) {
-      // ignore: avoid_print
-      print('Error fetching customers: $e');
-      return [];
-    }
+    final snap = await _customers
+        .where('createdBy', isEqualTo: userId)
+        .orderBy('name')
+        .get();
+    return snap.docs
+        .map((d) => Customer.fromJson(_fromFirestore(d.data())..['id'] = d.id))
+        .toList();
   }
 
   /// Search customers by name prefix, or exact TIN / identification number.

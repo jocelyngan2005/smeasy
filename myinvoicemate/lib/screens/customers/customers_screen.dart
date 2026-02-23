@@ -39,7 +39,21 @@ class _CustomersScreenState extends State<CustomersScreen> {
     setState(() => _isLoading = true);
     try {
       final authService = Provider.of<AuthService>(context, listen: false);
-      final userId = authService.currentUser?.id;
+      // Use currentUserId (reads FirebaseAuth.currentUser.uid synchronously)
+      // instead of currentUser?.id which requires an async Firestore fetch and
+      // may still be null when initState fires.
+      final userId = authService.currentUserId;
+
+      if (userId == null) {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          Helpers.showErrorSnackbar(
+            context,
+            'Not signed in — please sign out and sign back in.',
+          );
+        }
+        return;
+      }
 
       final customers = await _customerService.getCustomers(userId: userId);
 
@@ -51,7 +65,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        Helpers.showErrorSnackbar(context, 'Failed to load customers');
+        // Show the real error so we can diagnose Firestore issues
+        // (e.g. missing composite index, permission denied).
+        Helpers.showErrorSnackbar(
+          context,
+          'Failed to load customers: $e',
+        );
       }
     }
   }

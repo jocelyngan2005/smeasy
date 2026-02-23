@@ -5,6 +5,7 @@ import '../../backend/invoice/models/invoice_adapter.dart';
 import '../../backend/invoice/services/invoice_service.dart';
 import '../../backend/customer/models/customer_model.dart';
 import '../../backend/customer/services/customer_service.dart';
+import '../../backend/auth/services/auth_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../assistant/ai_assistant_screen.dart';
@@ -293,13 +294,14 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _invoiceNumberController,
+              readOnly: true,
               decoration: InputDecoration(
-                labelText: 'Invoice Number *',
+                labelText: 'Invoice Number (Auto-generated)',
                 prefixIcon: const Icon(Icons.numbers),
-                hintStyle: TextStyle(color: Colors.grey[100]),
+                suffixIcon: const Icon(Icons.lock, size: 16, color: Colors.grey),
+                filled: true,
+                fillColor: Colors.grey[100],
               ),
-              validator: (value) =>
-                  value?.isEmpty ?? true ? 'Invoice number is required' : null,
             ),
             const SizedBox(height: 16),
             ListTile(
@@ -1125,7 +1127,8 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
   }
 
   void _importCustomer() async {
-    final customers = await _customerService.getCustomers(userId: 'user123');
+    final userId = AuthService.instance.currentUserId;
+    final customers = await _customerService.getCustomers(userId: userId);
 
     if (!mounted) return;
 
