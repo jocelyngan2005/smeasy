@@ -54,6 +54,9 @@ dependencies:
   firebase_auth: ^6.1.4
   cloud_firestore: ^6.1.2
   
+  # QR Code Generation
+  qr_flutter: ^4.1.0
+
   # UI Components
   flutter_svg: ^2.0.10+1
   google_fonts: ^6.2.1

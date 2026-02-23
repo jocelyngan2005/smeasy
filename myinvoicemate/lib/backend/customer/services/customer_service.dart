@@ -80,13 +80,38 @@ class CustomerService {
     }
   }
 
+  /// Generate a customer ID in the format CUST<YYYYMMDD><3-digit sequence>.
+  ///
+  /// Uses an atomic Firestore counter per date to avoid duplicate IDs
+  /// even under concurrent writes.
+  Future<String> _generateCustomerId() async {
+    final now = DateTime.now();
+    final dateStr = '${now.year}'
+        '${now.month.toString().padLeft(2, '0')}'
+        '${now.day.toString().padLeft(2, '0')}';
+    final counterRef =
+        _db.collection('_counters').doc('customer_$dateStr');
+
+    int nextNum = 1;
+    await _db.runTransaction((txn) async {
+      final snap = await txn.get(counterRef);
+      if (snap.exists) {
+        nextNum = ((snap.data()!['count'] as num).toInt()) + 1;
+      }
+      txn.set(counterRef, {'count': nextNum});
+    });
+
+    return 'CUST$dateStr${nextNum.toString().padLeft(3, '0')}';
+  }
+
   /// Create a new customer document and return it with the assigned ID.
   Future<Customer?> createCustomer(Customer customer) async {
     try {
-      final doc = _customers.doc();
-      final data = _toFirestore(customer.toJson()..['id'] = doc.id);
+      final newId = await _generateCustomerId();
+      final doc = _customers.doc(newId);
+      final data = _toFirestore(customer.toJson()..['id'] = newId);
       await doc.set(data);
-      return customer.copyWith(id: doc.id);
+      return customer.copyWith(id: newId);
     } catch (e) {
       // ignore: avoid_print
       print('Error creating customer: $e');

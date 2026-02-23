@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../../backend/invoice/models/invoice_model.dart';
 import '../../backend/invoice/models/invoice_adapter.dart';
 import '../../backend/invoice/services/invoice_service.dart';
 import '../../backend/invoice/services/gemini_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
+import 'invoice_create_screen.dart';
 
 class InvoiceDetailScreen extends StatefulWidget {
   final Invoice invoice;
@@ -20,6 +22,86 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   final _geminiService = GeminiService();
   bool _isLoading = false;
   Map<String, dynamic>? _validationResult;
+
+  void _showQrCodeDialog() {
+    final inv = widget.invoice;
+    // Build a structured text payload from the invoice fields,
+    // mirroring what LHDN MyInvois would encode in its QR code.
+    // Replace this block with the URL/payload returned by the real API when available.
+    final lines = [
+      'MYINVOIS E-INVOICE',
+      'Invoice No : ${inv.invoiceNumber}',
+      'Date       : ${Helpers.formatDate(inv.issueDate)}',
+      'Currency   : ${inv.currency}',
+      '',
+      'Seller     : ${inv.sellerName}',
+      'Seller TIN : ${inv.sellerTin}',
+      '',
+      'Buyer      : ${inv.buyerName}',
+      'Buyer TIN  : ${inv.buyerTin}',
+      '',
+      'Subtotal   : ${inv.currency} ${inv.subtotal.toStringAsFixed(2)}',
+      'Tax        : ${inv.currency} ${inv.taxAmount.toStringAsFixed(2)}',
+      'Total      : ${inv.currency} ${inv.totalAmount.toStringAsFixed(2)}',
+      if (inv.myInvoisId != null) '',
+      if (inv.myInvoisId != null) 'Ref        : ${inv.myInvoisId}',
+    ];
+    final qrData = lines.join('\n');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.qr_code, color: AppColors.primary),
+            const SizedBox(width: 8),
+            const Text('Invoice QR Code'),
+          ],
+        ),
+        content: SizedBox(
+          width: 280,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: QrImageView(
+                  data: qrData,
+                  version: QrVersions.auto,
+                  size: 220,
+                  backgroundColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                widget.invoice.invoiceNumber,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Scan to verify on MyInvois portal',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _submitToMyInvois() async {
     if (!widget.invoice.requiresSubmission) {
@@ -150,18 +232,37 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           style: const TextStyle(color: Colors.black),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () {
-              Helpers.showInfoSnackbar(context, 'Edit feature coming soon');
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: () {
-              Helpers.showInfoSnackbar(context, 'Share feature coming soon');
-            },
-          ),
+          if (widget.invoice.status.toLowerCase() == AppConstants.statusValid)
+            IconButton(
+              icon: const Icon(Icons.qr_code),
+              tooltip: 'View QR Code',
+              onPressed: _showQrCodeDialog,
+            ),
+          if (_canEdit(widget.invoice.status))
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: 'Edit Invoice',
+              onPressed: () async {
+                final updated = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => InvoiceCreateScreen(
+                      initialInvoice: widget.invoice,
+                    ),
+                  ),
+                );
+                if (updated == true && mounted) {
+                  Navigator.pop(context, true);
+                }
+              },
+            ),
+          if (!_canEdit(widget.invoice.status))
+            IconButton(
+              icon: const Icon(Icons.share),
+              onPressed: () {
+                Helpers.showInfoSnackbar(context, 'Share feature coming soon');
+              },
+            ),
         ],
       ),
       body: Stack(
@@ -675,7 +776,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
             ),
         ],
       ),
-      bottomNavigationBar: _buildBottomBar(),
+      bottomNavigationBar: _canVerify(widget.invoice.status) ? _buildBottomBar() : null,
     );
   }
 
@@ -755,6 +856,18 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Returns true for statuses that allow editing (draft and invalid/rejected).
+  bool _canEdit(String status) {
+    final s = status.toLowerCase();
+    return s == AppConstants.statusDraft || s == AppConstants.statusInvalid;
+  }
+
+  /// Returns true for statuses where the Verify button should be shown.
+  bool _canVerify(String status) {
+    final s = status.toLowerCase();
+    return s != AppConstants.statusSubmitted && s != AppConstants.statusValid;
   }
 
   IconData _getStatusIcon(String status) {

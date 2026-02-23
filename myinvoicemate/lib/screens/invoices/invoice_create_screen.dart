@@ -11,7 +11,10 @@ import '../../utils/helpers.dart';
 import '../assistant/ai_assistant_screen.dart';
 
 class InvoiceCreateScreen extends StatefulWidget {
-  const InvoiceCreateScreen({super.key});
+  /// Pass an existing [Invoice] to enter edit mode for draft/invalid invoices.
+  final Invoice? initialInvoice;
+
+  const InvoiceCreateScreen({super.key, this.initialInvoice});
 
   @override
   State<InvoiceCreateScreen> createState() => _InvoiceCreateScreenState();
@@ -60,11 +63,64 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
 
   bool _isSaving = false;
 
+  bool get _isEditing => widget.initialInvoice != null;
+
   @override
   void initState() {
     super.initState();
-    _generateInvoiceNumber();
-    _addLineItem(); // Start with one empty line item
+    if (_isEditing) {
+      _populateFromInvoice(widget.initialInvoice!);
+    } else {
+      _generateInvoiceNumber();
+      _addLineItem(); // Start with one empty line item
+    }
+  }
+
+  /// Pre-populate all form controllers from an existing [invoice].
+  void _populateFromInvoice(Invoice invoice) {
+    _invoiceNumberController.text = invoice.invoiceNumber;
+    _issueDate = invoice.issueDate;
+    _dueDate = invoice.dueDate;
+    _notesController.text = invoice.notes ?? '';
+
+    // Buyer
+    _buyerNameController.text = invoice.buyerName;
+    _buyerTinController.text = invoice.buyerTin;
+    _buyerIdNumberController.text = invoice.buyerRegistrationNumber;
+    _buyerContactController.text = invoice.buyerContactNumber;
+    _buyerSstController.text = invoice.buyerSstNumber;
+    _buyerEmailController.text = invoice.buyerEmail ?? '';
+    _buyerAddress1Controller.text = invoice.buyer.address.line1;
+    _buyerAddress2Controller.text = invoice.buyer.address.line2 ?? '';
+    _buyerCityController.text = invoice.buyer.address.city;
+    _buyerStateController.text = invoice.buyer.address.state;
+    _buyerPostalCodeController.text = invoice.buyer.address.postalCode;
+
+    // Seller
+    _sellerNameController.text = invoice.sellerName;
+    _sellerTinController.text = invoice.sellerTin;
+    _sellerIdNumberController.text = invoice.sellerRegistrationNumber;
+    _sellerContactController.text = invoice.sellerContactNumber;
+    _sellerSstController.text = invoice.sellerSstNumber;
+    _sellerEmailController.text = invoice.sellerEmail ?? '';
+    _sellerAddress1Controller.text = invoice.vendor.address.line1;
+    _sellerAddress2Controller.text = invoice.vendor.address.line2 ?? '';
+    _sellerCityController.text = invoice.vendor.address.city;
+    _sellerStateController.text = invoice.vendor.address.state;
+    _sellerPostalCodeController.text = invoice.vendor.address.postalCode;
+
+    // Line Items
+    _lineItems = invoice.lineItems.map((item) {
+      final data = LineItemData();
+      data.descriptionController.text = item.description;
+      data.quantityController.text = item.quantity.toString();
+      data.unitPriceController.text = item.unitPrice.toStringAsFixed(2);
+      data.unit = item.unit;
+      data.taxRate = item.taxRate;
+      return data;
+    }).toList();
+
+    if (_lineItems.isEmpty) _addLineItem();
   }
 
   void _generateInvoiceNumber() {
@@ -112,7 +168,7 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
     }).toList();
 
     return InvoiceBuilder.fromSimpleData(
-      id: _uuid.v4(),
+      id: _isEditing ? widget.initialInvoice!.id : _uuid.v4(),
       invoiceNumber: _invoiceNumberController.text,
       sellerId: AuthService.instance.currentUserId ?? '',
       sellerName: _sellerNameController.text,
@@ -170,7 +226,11 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
     setState(() => _isSaving = true);
     try {
       final invoice = _buildInvoiceFromForm(AppConstants.statusDraft);
-      await _invoiceService.createInvoice(invoice);
+      if (_isEditing) {
+        await _invoiceService.updateInvoice(invoice);
+      } else {
+        await _invoiceService.createInvoice(invoice);
+      }
       if (mounted) {
         Helpers.showSuccessSnackbar(context, 'Invoice saved as draft');
         Navigator.pop(context, true);
@@ -195,7 +255,11 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
     setState(() => _isSaving = true);
     try {
       final invoice = _buildInvoiceFromForm(AppConstants.statusSubmitted);
-      await _invoiceService.createInvoice(invoice);
+      if (_isEditing) {
+        await _invoiceService.updateInvoice(invoice);
+      } else {
+        await _invoiceService.createInvoice(invoice);
+      }
       if (mounted) {
         Helpers.showSuccessSnackbar(context, 'Invoice submitted successfully');
         Navigator.pop(context, true);
@@ -259,7 +323,7 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.black,
-        title: const Text('Create Invoice', style: TextStyle(color: Colors.black)),
+        title: Text(_isEditing ? 'Edit Invoice' : 'Create Invoice', style: const TextStyle(color: Colors.black)),
         actions: [
           if (_isSaving)
             const Center(
