@@ -16,24 +16,31 @@ class InvoiceListScreen extends StatefulWidget {
   State<InvoiceListScreen> createState() => _InvoiceListScreenState();
 }
 
-class _InvoiceListScreenState extends State<InvoiceListScreen> {
+class _InvoiceListScreenState extends State<InvoiceListScreen>
+    with SingleTickerProviderStateMixin {
   final _invoiceService = FirestoreInvoiceService();
   final _searchController = TextEditingController();
+  late final TabController _tabController;
+
   List<Invoice> _invoices = [];
-  List<Invoice> _filteredInvoices = [];
+  List<Invoice> _filteredSent = [];
+  List<Invoice> _filteredReceived = [];
   bool _isLoading = true;
   String _filterStatus = 'all';
   String _searchQuery = '';
+  String _userTin = '';
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _searchController.addListener(_onSearchChanged);
     _loadInvoices();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
@@ -49,7 +56,9 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
   Future<void> _loadInvoices() async {
     setState(() => _isLoading = true);
     try {
-      final userId = context.read<AuthService>().currentUserId ?? '';
+      final authService = context.read<AuthService>();
+      final userId = authService.currentUserId ?? '';
+      _userTin = authService.currentUser?.tin ?? '';
       final invoices = await _invoiceService.getInvoicesByUser(userId);
       setState(() {
         _invoices = invoices;
@@ -63,26 +72,29 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
   }
 
   void _applyFilter() {
-    List<Invoice> filtered = _invoices;
+    final sent = _invoices.where((inv) => inv.sellerTin == _userTin).toList();
+    final received = _invoices.where((inv) => inv.sellerTin != _userTin).toList();
+    _filteredSent = _applyFiltersTo(sent);
+    _filteredReceived = _applyFiltersTo(received);
+  }
 
-    // Apply status filter
+  List<Invoice> _applyFiltersTo(List<Invoice> source) {
+    List<Invoice> filtered = source;
     if (_filterStatus != 'all') {
       filtered = filtered
           .where((inv) => inv.status.toLowerCase() == _filterStatus)
           .toList();
     }
-
-    // Apply search filter
     if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
       filtered = filtered.where((inv) {
         return inv.invoiceNumber.toLowerCase().contains(query) ||
             inv.buyerName.toLowerCase().contains(query) ||
-            inv.buyerTin.toLowerCase().contains(query);
+            inv.buyerTin.toLowerCase().contains(query) ||
+            inv.sellerName.toLowerCase().contains(query);
       }).toList();
     }
-
-    _filteredInvoices = filtered;
+    return filtered;
   }
 
   @override
@@ -117,22 +129,41 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
           : Column(
               children: [
                 _buildSearchBar(),
+                TabBar(
+                  controller: _tabController,
+                  labelColor: AppColors.primary,
+                  unselectedLabelColor: Colors.grey[600],
+                  indicatorColor: AppColors.primary,
+                  tabs: const [
+                    Tab(text: 'Sent'),
+                    Tab(text: 'Received'),
+                  ],
+                ),
                 Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _loadInvoices,
-                    child: _filteredInvoices.isEmpty
-                        ? _buildEmptyState()
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _filteredInvoices.length,
-                            itemBuilder: (context, index) {
-                              final invoice = _filteredInvoices[index];
-                              return _buildInvoiceCard(invoice);
-                            },
-                          ),
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildInvoiceList(_filteredSent, isSent: true),
+                      _buildInvoiceList(_filteredReceived, isSent: false),
+                    ],
                   ),
                 ),
               ],
+            ),
+    );
+  }
+
+  Widget _buildInvoiceList(List<Invoice> invoices, {required bool isSent}) {
+    return RefreshIndicator(
+      onRefresh: _loadInvoices,
+      child: invoices.isEmpty
+          ? _buildEmptyState(isSent: isSent)
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: invoices.length,
+              itemBuilder: (context, index) {
+                return _buildInvoiceCard(invoices[index], isSent: isSent);
+              },
             ),
     );
   }
@@ -199,7 +230,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState({required bool isSent}) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -207,7 +238,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
           Icon(Icons.receipt_long, size: 80, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            'No invoices found',
+            isSent ? 'No sent invoices' : 'No received invoices',
             style: TextStyle(
               fontSize: 18,
               color: Colors.grey[600],
@@ -216,7 +247,9 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Create your first invoice using\nVoice or Receipt Scanner',
+            isSent
+                ? 'Create your first invoice using\nVoice or Receipt Scanner'
+                : 'Invoices sent to you will appear here',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey[500]),
           ),
@@ -225,7 +258,12 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
     );
   }
 
-  Widget _buildInvoiceCard(Invoice invoice) {
+  Widget _buildInvoiceCard(Invoice invoice, {required bool isSent}) {
+    // For sent invoices show the buyer; for received show the seller.
+    final counterpartyName = isSent ? invoice.buyerName : invoice.sellerName;
+    final counterpartyTin = isSent ? invoice.buyerTin : invoice.sellerTin;
+    final counterpartyLabel = isSent ? 'Buyer TIN' : 'Seller TIN';
+
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
@@ -259,7 +297,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                invoice.buyerName,
+                counterpartyName,
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
@@ -267,7 +305,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'TIN: ${invoice.buyerTin}',
+                '$counterpartyLabel: $counterpartyTin',
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.grey[600],
