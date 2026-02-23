@@ -38,7 +38,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   
   # Google Generative AI (Gemini)
-  google_generative_ai: ^0.4.3
+  google_generative_ai: ^0.4.6
   
   # Image Processing & Vision
   image: ^4.2.0
