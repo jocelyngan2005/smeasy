@@ -53,6 +53,7 @@ dependencies:
   firebase_core: ^4.4.0
   firebase_auth: ^6.1.4
   cloud_firestore: ^6.1.2
+  cloud_functions: ^6.0.6
   
   # UI Components
   flutter_svg: ^2.0.10+1

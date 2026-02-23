@@ -1,9 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:convert';
 import '../../firestore_collections.dart';
 import '../models/analytics_model.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
 
 /// AI-powered recommendations service using Vertex AI.
 ///
@@ -13,19 +12,12 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 /// - Revenue optimization opportunities
 /// - Customer behavior predictions
 class AIRecommendationsService {
-  AIRecommendationsService({
-    FirebaseFirestore? firestore,
-    http.Client? httpClient,
-  })  : _db = firestore ?? FirebaseFirestore.instance,
-        _httpClient = httpClient ?? http.Client();
+  AIRecommendationsService({FirebaseFirestore? firestore})
+      : _db = firestore ?? FirebaseFirestore.instance,
+        _functions = FirebaseFunctions.instance;
 
   final FirebaseFirestore _db;
-  final http.Client _httpClient;
-
-  // Vertex AI configuration
-  static const String _projectId = 'myinvoicemate';
-  static const String _location = 'global';
-  static const String _modelId = 'gemini-1.5-flash';
+  final FirebaseFunctions _functions;
 
   // ---------------------------------------------------------------------------
   // AI Recommendations
@@ -33,28 +25,33 @@ class AIRecommendationsService {
 
   /// Generate AI-powered recommendations based on user's business data.
   ///
-  /// Returns actionable insights across multiple categories:
-  /// - Compliance alerts
-  /// - Revenue optimization
-  /// - Customer retention
-  /// - Cash flow improvements
+  /// Uses Firebase Cloud Functions as a secure proxy for Vertex AI.
   Future<List<AIRecommendation>> generateRecommendations(String userId) async {
     try {
+      print('🤖 Generating AI recommendations via Cloud Function...');
+      
       // 1. Gather business context
       final context = await _buildBusinessContext(userId);
       
-      // 2. Generate AI insights using Vertex AI
-      final insights = await _callVertexAI(context);
+      // 2. Call Cloud Function with business context
+      final result = await _callCloudFunction('generateAIRecommendations', {
+        'businessContext': context,
+      });
       
-      // 3. Parse and structure recommendations
-      final recommendations = _parseRecommendations(insights);
-      
-      // 4. Cache recommendations for quick access
-      await _cacheRecommendations(userId, recommendations);
-      
-      return recommendations;
+      if (result['success'] == true) {
+        // 3. Parse and return recommendations
+        final recommendations = (result['recommendations'] as List? ?? [])
+            .map((r) => AIRecommendation.fromJson(Map<String, dynamic>.from(r)))
+            .toList();
+            
+        print('✅ Generated ${recommendations.length} AI recommendations');
+        return recommendations;
+      } else {
+        print('⚠️ Cloud Function returned error: ${result['error']}');
+        return await _getCachedRecommendations(userId);
+      }
     } catch (e) {
-      print('Error generating AI recommendations: $e');
+      print('❌ Error generating AI recommendations: $e');
       // Fallback to cached recommendations
       return await _getCachedRecommendations(userId);
     }
@@ -62,10 +59,29 @@ class AIRecommendationsService {
 
   /// Get cached recommendations (faster, updated hourly).
   Future<List<AIRecommendation>> getCachedRecommendations(String userId) async {
-    return await _getCachedRecommendations(userId);
+    try {
+      print('📱 Getting cached recommendations via Cloud Function...');
+      
+      final result = await _callCloudFunction('getCachedAIRecommendations', {});
+      
+      if (result['success'] == true) {
+        final recommendations = (result['recommendations'] as List? ?? [])
+            .map((r) => AIRecommendation.fromJson(Map<String, dynamic>.from(r)))
+            .toList();
+            
+        print('📦 Retrieved ${recommendations.length} cached recommendations');
+        return recommendations;
+      } else {
+        return _getFallbackRecommendations();
+      }
+    } catch (e) {
+      print('Error getting cached recommendations: $e');
+      return _getFallbackRecommendations();
+    }
   }
 
   /// Analyze specific invoice for compliance and optimization suggestions.
+  /// TODO: Implement Cloud Function for invoice analysis
   Future<InvoiceAnalysis> analyzeInvoice(String invoiceId) async {
     try {
       final invoiceDoc = await _db
@@ -77,11 +93,10 @@ class AIRecommendationsService {
         return InvoiceAnalysis.empty();
       }
 
-      final data = invoiceDoc.data()!;
-      final prompt = _buildInvoiceAnalysisPrompt(data);
-      final analysis = await _callVertexAI(prompt);
-
-      return InvoiceAnalysis.fromAI(analysis);
+      // For now, return a basic analysis
+      // TODO: Create a Cloud Function for detailed invoice analysis
+      print('📄 Analyzing invoice: $invoiceId (basic analysis)');
+      return InvoiceAnalysis.empty();
     } catch (e) {
       print('Error analyzing invoice: $e');
       return InvoiceAnalysis.empty();
@@ -156,65 +171,21 @@ Provide specific issues found and improvement suggestions.
   }
 
   // ---------------------------------------------------------------------------
-  // Vertex AI Integration
+  // Cloud Functions Integration
   // ---------------------------------------------------------------------------
 
-  Future<String> _callVertexAI(String prompt) async {
+  /// Call Firebase Cloud Function securely
+  Future<Map<String, dynamic>> _callCloudFunction(
+    String functionName, 
+    Map<String, dynamic> data,
+  ) async {
     try {
-      final token = await _getAccessToken();
-      if (token == null) {
-        throw Exception('Unable to get access token');
-      }
-
-      final url = Uri.parse(
-        'https://$_location-aiplatform.googleapis.com/v1/'
-        'projects/$_projectId/locations/$_location/'
-        'publishers/google/models/$_modelId:generateContent',
-      );
-
-      final response = await _httpClient.post(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'contents': [
-            {
-              'role': 'user',
-              'parts': [
-                {'text': prompt}
-              ]
-            }
-          ],
-          'generationConfig': {
-            'temperature': 0.4,
-            'topP': 0.8,
-            'topK': 40,
-            'maxOutputTokens': 2048,
-          },
-          'safetySettings': [
-            {
-              'category': 'HARM_CATEGORY_HARASSMENT',
-              'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-            },
-            {
-              'category': 'HARM_CATEGORY_HATE_SPEECH',
-              'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-            }
-          ]
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final result = json.decode(response.body);
-        final text = result['candidates']?[0]?['content']?['parts']?[0]?['text'];
-        return text ?? 'No recommendations available';
-      }
-
-      throw Exception('Vertex AI API error: ${response.statusCode}');
+      final callable = _functions.httpsCallable(functionName);
+      final result = await callable.call(data);
+      
+      return Map<String, dynamic>.from(result.data ?? {});
     } catch (e) {
-      print('Error calling Vertex AI: $e');
+      print('Cloud Function error: $e');
       rethrow;
     }
   }
@@ -435,14 +406,5 @@ Missing Buyer TIN: $missingTIN
     ];
   }
 
-  Future<String?> _getAccessToken() async {
-    try {
-      final user = fb.FirebaseAuth.instance.currentUser;
-      if (user == null) return null;
-      return await user.getIdToken();
-    } catch (e) {
-      print('Error getting access token: $e');
-      return null;
-    }
-  }
+
 }

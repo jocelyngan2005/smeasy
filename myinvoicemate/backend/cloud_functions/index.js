@@ -3,10 +3,20 @@
 
 const functions = require('firebase-functions');
 const {BigQuery} = require('@google-cloud/bigquery');
+const {PredictionServiceClient} = require('@google-cloud/aiplatform');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
 const bigquery = new BigQuery();
+
+// Vertex AI configuration
+const PROJECT_ID = 'myinvoicemate'; // ⚠️ TODO: Replace with your actual GCP project ID
+const LOCATION = 'asia-southeast1';
+const MODEL_ID = 'gemini-1.5-flash';
+
+const client = new PredictionServiceClient({
+  apiEndpoint: `${LOCATION}-aiplatform.googleapis.com`,
+});
 
 const DATASET_ID = 'myinvoicemate_analytics';
 const INVOICES_TABLE = 'invoices';
@@ -334,3 +344,254 @@ exports.exportUserDataToBigQuery = functions.https.onCall(async (data, context) 
     );
   }
 });
+
+/**
+ * Generate AI recommendations using Vertex AI (Gemini)
+ * Called from Flutter app with business context
+ */
+exports.generateAIRecommendations = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'User must be authenticated'
+    );
+  }
+
+  const userId = context.auth.uid;
+  const { businessContext } = data;
+
+  if (!businessContext) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Business context is required'
+    );
+  }
+
+  try {
+    console.log(`🤖 Generating AI recommendations for user: ${userId}`);
+    
+    // Construct the model path
+    const modelPath = client.projectLocationPublisherModelPath(
+      PROJECT_ID,
+      LOCATION,
+      'google',
+      MODEL_ID
+    );
+
+    // Build the request for Vertex AI
+    const request = {
+      endpoint: modelPath,
+      instances: [
+        {
+          content: {
+            role: 'user',
+            parts: [
+              {
+                text: businessContext
+              }
+            ]
+          }
+        }
+      ],
+      parameters: {
+        temperature: 0.4,
+        topP: 0.8,
+        topK: 40,
+        maxOutputTokens: 2048,
+      }
+    };
+
+    console.log(`🔍 Calling Vertex AI Model: ${modelPath}`);
+    
+    // Call Vertex AI
+    const [response] = await client.predict(request);
+    
+    if (!response.predictions || response.predictions.length === 0) {
+      throw new Error('No predictions returned from Vertex AI');
+    }
+
+    const prediction = response.predictions[0];
+    const aiResponse = prediction.content?.parts?.[0]?.text || 'No recommendations generated';
+
+    console.log(`✅ AI response received (length: ${aiResponse.length})`);
+
+    // Parse the AI response into structured recommendations
+    const recommendations = parseRecommendations(aiResponse);
+
+    // Cache recommendations in Firestore
+    await admin.firestore()
+      .collection('ai_recommendations_cache')
+      .doc(userId)
+      .set({
+        recommendations: recommendations.map(r => ({
+          category: r.category,
+          priority: r.priority,
+          title: r.title,
+          description: r.description,
+          impact: r.impact,
+          timestamp: new Date().toISOString(),
+        })),
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+        rawResponse: aiResponse,
+      });
+
+    console.log(`💾 Cached ${recommendations.length} recommendations for user ${userId}`);
+
+    return {
+      success: true,
+      recommendations,
+      message: `Generated ${recommendations.length} AI recommendations`,
+    };
+
+  } catch (error) {
+    console.error('Error generating AI recommendations:', error);
+    
+    // Return fallback recommendations if AI fails
+    const fallbackRecommendations = getFallbackRecommendations();
+    
+    return {
+      success: false,
+      recommendations: fallbackRecommendations,
+      message: 'Using fallback recommendations due to AI service error',
+      error: error.message,
+    };
+  }
+});
+
+/**
+ * Get cached AI recommendations
+ */
+exports.getCachedAIRecommendations = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'User must be authenticated'
+    );
+  }
+
+  const userId = context.auth.uid;
+
+  try {
+    const doc = await admin.firestore()
+      .collection('ai_recommendations_cache')
+      .doc(userId)
+      .get();
+
+    if (!doc.exists) {
+      console.log(`No cached recommendations for user ${userId}, returning fallback`);
+      return {
+        success: true,
+        recommendations: getFallbackRecommendations(),
+        cached: false,
+        message: 'No cached recommendations found, using fallback',
+      };
+    }
+
+    const data = doc.data();
+    const lastUpdated = data.lastUpdated?.toDate();
+    const isStale = !lastUpdated || 
+      (Date.now() - lastUpdated.getTime()) > (60 * 60 * 1000); // 1 hour
+
+    if (isStale) {
+      console.log(`Cached recommendations for user ${userId} are stale`);
+      return {
+        success: true,
+        recommendations: data.recommendations || getFallbackRecommendations(),
+        cached: true,
+        stale: true,
+        message: 'Cached recommendations are outdated, consider refreshing',
+      };
+    }
+
+    return {
+      success: true,
+      recommendations: data.recommendations || [],
+      cached: true,
+      stale: false,
+      lastUpdated: lastUpdated.toISOString(),
+      message: 'Retrieved fresh cached recommendations',
+    };
+
+  } catch (error) {
+    console.error('Error getting cached recommendations:', error);
+    return {
+      success: false,
+      recommendations: getFallbackRecommendations(),
+      message: 'Error retrieving recommendations, using fallback',
+      error: error.message,
+    };
+  }
+});
+
+/**
+ * Parse AI response into structured recommendations
+ */
+function parseRecommendations(aiResponse) {
+  const recommendations = [];
+  const lines = aiResponse.split('\n');
+  
+  let category, priority, title, description, impact;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    if (trimmed.startsWith('CATEGORY:')) {
+      category = trimmed.substring(9).trim();
+    } else if (trimmed.startsWith('PRIORITY:')) {
+      priority = trimmed.substring(9).trim();
+    } else if (trimmed.startsWith('TITLE:')) {
+      title = trimmed.substring(6).trim();
+    } else if (trimmed.startsWith('DESCRIPTION:')) {
+      description = trimmed.substring(12).trim();
+    } else if (trimmed.startsWith('IMPACT:')) {
+      impact = trimmed.substring(7).trim();
+      
+      // Complete recommendation found
+      if (category && priority && title) {
+        recommendations.push({
+          category: category || 'Operations',
+          priority: priority || 'Medium',
+          title: title || 'General Recommendation',
+          description: description || '',
+          impact: impact || '',
+        });
+        
+        // Reset for next recommendation
+        category = priority = title = description = impact = null;
+      }
+    }
+  }
+
+  return recommendations.length > 0 ? recommendations : getFallbackRecommendations();
+}
+
+/**
+ * Fallback recommendations when AI is unavailable
+ */
+function getFallbackRecommendations() {
+  return [
+    {
+      category: 'Compliance',
+      priority: 'High',
+      title: 'Review Pending MyInvois Submissions',
+      description: 'You have invoices ≥ RM10,000 that require MyInvois submission within 72 hours. Review and submit them to avoid penalties.',
+      impact: 'Maintain compliance and avoid fines',
+    },
+    {
+      category: 'Revenue',
+      priority: 'Medium',
+      title: 'Optimize Invoice Timing',
+      description: 'Analysis shows better payment rates when invoices are sent on Monday-Wednesday. Consider adjusting your invoicing schedule.',
+      impact: 'Improve cash flow by 15-20%',
+    },
+    {
+      category: 'Operations',
+      priority: 'Medium',
+      title: 'Update Customer TIN Information',
+      description: 'Several invoices are missing buyer TIN numbers. Complete this information to ensure seamless e-invoice submission.',
+      impact: 'Reduce submission errors',
+    },
+  ];
+}
