@@ -188,10 +188,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 16),
 
-              // AI Insights Banner
-              _buildAIInsightsBanner(),
-              const SizedBox(height: 24),
-
               // Quick Stats
               if (_isLoading)
                 const Center(child: CircularProgressIndicator())
@@ -757,25 +753,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Color(0xFF2E3193),
                   ),
                 ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2E3193).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text(
-                    'POWERED BY VERTEX AI',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2E3193),
-                    ),
-                  ),
-                ),
+                Spacer(), 
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Color(0xFF2E3193)),
+                  onPressed: _refreshAIRecommendations,
+                ),          
               ],
             ),
             const SizedBox(height: 20),
