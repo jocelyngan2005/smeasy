@@ -4,17 +4,21 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Vertex AI Search integration for enterprise-grade semantic search
 /// Provides grounded answers from LHDN compliance documents
+/// 
+/// **AUTHENTICATION**: Vertex AI Search requires OAuth2 access token.
+/// Set VERTEX_ACCESS_TOKEN in .env file with a valid OAuth2 token.
+/// See VERTEX_AI_SETUP.md for instructions on obtaining access tokens.
 class VertexAISearchService {
   final String? _projectId;
   final String? _location;
   final String? _dataStoreId;
-  final String? _apiKey;
+  final String? _accessToken;
 
   VertexAISearchService()
       : _projectId = dotenv.env['VERTEX_PROJECT_ID'],
         _location = dotenv.env['VERTEX_LOCATION'] ?? 'global',
         _dataStoreId = dotenv.env['VERTEX_DATASTORE_ID'],
-        _apiKey = dotenv.env['VERTEX_API_KEY'];
+        _accessToken = dotenv.env['VERTEX_ACCESS_TOKEN'];
 
   /// Search LHDN compliance documents using Vertex AI Search
   Future<VertexSearchResult> search({
@@ -25,7 +29,7 @@ class VertexAISearchService {
     // Validate configuration
     final projectId = _projectId;
     final dataStoreId = _dataStoreId;
-    final apiKey = _apiKey;
+    final accessToken = _accessToken;
     
     if (projectId == null || projectId.isEmpty) {
       throw Exception('VERTEX_PROJECT_ID not found in .env file');
@@ -33,8 +37,8 @@ class VertexAISearchService {
     if (dataStoreId == null || dataStoreId.isEmpty) {
       throw Exception('VERTEX_DATASTORE_ID not found in .env file');
     }
-    if (apiKey == null || apiKey.isEmpty) {
-      throw Exception('VERTEX_API_KEY not found in .env file');
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('VERTEX_ACCESS_TOKEN not found in .env file. See VERTEX_AI_SETUP.md for instructions.');
     }
 
     // Build API endpoint
@@ -71,20 +75,17 @@ class VertexAISearchService {
               'version': 'stable', // Use stable model
             },
           },
-          'extractiveContentSpec': {
-            'maxExtractiveAnswerCount': 3,
-            'maxExtractiveSegmentCount': 3,
-          },
+          // Note: extractiveContentSpec removed to support datastores with chunking config
         },
     };
 
     try {
-      // Make API request
+      // Make API request with OAuth2 Bearer token
       final response = await http.post(
         endpoint,
         headers: {
           'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey,
+          'Authorization': 'Bearer $accessToken',
         },
         body: jsonEncode(requestBody),
       );
@@ -103,15 +104,15 @@ class VertexAISearchService {
     }
   }
 
-  /// Check if Vertex AI Search is configured
+  /// Check if Vertex AI Search is configured with OAuth2 access token
   bool get isConfigured {
     final projectId = _projectId;
     final dataStoreId = _dataStoreId;
-    final apiKey = _apiKey;
+    final accessToken = _accessToken;
     
     return projectId != null && projectId.isNotEmpty &&
         dataStoreId != null && dataStoreId.isNotEmpty &&
-        apiKey != null && apiKey.isNotEmpty;
+        accessToken != null && accessToken.isNotEmpty;
   }
 
   /// Get configuration status message
@@ -122,12 +123,14 @@ class VertexAISearchService {
       final missing = <String>[];
       final projectId = _projectId;
       final dataStoreId = _dataStoreId;
-      final apiKey = _apiKey;
+      final accessToken = _accessToken;
       
       if (projectId == null || projectId.isEmpty) missing.add('VERTEX_PROJECT_ID');
       if (dataStoreId == null || dataStoreId.isEmpty) missing.add('VERTEX_DATASTORE_ID');
-      if (apiKey == null || apiKey.isEmpty) missing.add('VERTEX_API_KEY');
-      return 'Vertex AI Search not configured. Missing: ${missing.join(", ")}';
+      if (accessToken == null || accessToken.isEmpty) missing.add('VERTEX_ACCESS_TOKEN');
+      
+      return 'Vertex AI Search not configured. Missing: ${missing.join(", ")}. '
+             'See VERTEX_AI_SETUP.md for OAuth2 setup instructions.';
     }
   }
 }
@@ -188,17 +191,31 @@ class SearchResult {
   final Map<String, dynamic> document;
   final String? title;
   final String? snippet;
+  final String? uri;
 
   SearchResult({
     required this.id,
     required this.document,
     this.title,
     this.snippet,
+    this.uri,
   });
 
   factory SearchResult.fromJson(Map<String, dynamic> json) {
     final document = json['document'] as Map<String, dynamic>? ?? {};
     final structData = document['structData'] as Map<String, dynamic>? ?? {};
+    final derivedStructData = document['derivedStructData'] as Map<String, dynamic>? ?? {};
+    
+    // Extract URI from various possible locations
+    String? uri = structData['url'] as String? ?? 
+                  structData['uri'] as String? ??
+                  derivedStructData['link'] as String? ??
+                  document['name'] as String?;
+    
+    // Convert gs:// to https:// if needed
+    if (uri != null && uri.startsWith('gs://')) {
+      uri = uri.replaceFirst('gs://', 'https://storage.googleapis.com/');
+    }
 
     return SearchResult(
       id: json['id'] as String? ?? '',
@@ -206,6 +223,7 @@ class SearchResult {
       title: structData['title'] as String?,
       snippet: structData['snippet'] as String? ?? 
                structData['extractiveSegments']?[0]?['content'] as String?,
+      uri: uri,
     );
   }
 }
@@ -242,16 +260,39 @@ class Citation {
 class CitationSource {
   final String referenceId;
   final String? title;
+  final String? uri;
 
   CitationSource({
     required this.referenceId,
     this.title,
+    this.uri,
   });
 
   factory CitationSource.fromJson(Map<String, dynamic> json) {
+    // Extract URI from referenceId or separate uri field
+    String? uri = json['uri'] as String?;
+    final refId = json['referenceId'] as String? ?? '';
+    
+    // If referenceId looks like a GCS path, format it as a URL
+    if (uri == null && refId.isNotEmpty) {
+      uri = _convertGcsToHttps(refId);
+    } else if (uri != null && uri.startsWith('gs://')) {
+      uri = _convertGcsToHttps(uri);
+    }
+    
     return CitationSource(
-      referenceId: json['referenceId'] as String? ?? '',
+      referenceId: refId,
       title: json['title'] as String?,
+      uri: uri,
     );
+  }
+  
+  /// Convert gs:// GCS path to https:// URL
+  static String _convertGcsToHttps(String path) {
+    if (path.startsWith('gs://')) {
+      // Convert gs://bucket/path to https://storage.googleapis.com/bucket/path
+      return path.replaceFirst('gs://', 'https://storage.googleapis.com/');
+    }
+    return path;
   }
 }

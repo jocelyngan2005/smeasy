@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io';
 import '../../backend/invoice/services/invoice_service.dart';
 import '../../backend/invoice/models/invoice_model.dart';
@@ -172,8 +176,14 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     _scrollToBottom();
 
     try {
+      // Check if this is a greeting first
+      if (_isGreeting(userMessage)) {
+        await _handleGreeting();
+        return;
+      }
+      
       // Detect if this is a compliance question or invoice generation
-      final isComplianceQuestion = _isComplianceQuestion(userMessage);
+      final isComplianceQuestion = await _detectUserIntent(userMessage);
       
       if (isComplianceQuestion && attachedImage == null) {
         // Handle compliance question with Knowledge Assistant
@@ -199,45 +209,143 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     }
   }
 
-  /// Detect if user input is a compliance question vs invoice creation
-  bool _isComplianceQuestion(String input) {
-    final lower = input.toLowerCase();
+  /// Check if user input is a greeting or casual message
+  bool _isGreeting(String input) {
+    final lower = input.trim().toLowerCase();
     
-    // Question indicators
-    final questionWords = ['what', 'how', 'when', 'why', 'can i', 'should i', 'do i need', 'is it', 'are there', 'explain'];
-    final hasQuestionWord = questionWords.any((word) => lower.contains(word));
-    
-    // Compliance keywords
-    final complianceKeywords = [
-      'compliance', 'lhdn', 'myinvois', 'rule', 'regulation', 'guideline',
-      'tin', 'sst', 'tax', 'penalty', 'deadline', 'submit', 'requirement',
-      'rm10', '10000', 'threshold', 'consolidat', 'relaxation', 'period',
-      'exempt', 'mandatory', 'legal', 'law', 'fine'
+    // Common greetings
+    final greetings = [
+      'hi', 'hello', 'hey', 'helo', 'hii', 'hiii',
+      'good morning', 'good afternoon', 'good evening', 'good day',
+      'morning', 'afternoon', 'evening',
+      'greetings', 'yo', 'sup', "what's up", 'whats up',
+      'howdy', 'hiya',
     ];
-    final hasComplianceKeyword = complianceKeywords.any((keyword) => lower.contains(keyword));
     
-    // Invoice creation indicators
-    final invoiceKeywords = ['create', 'generate', 'make', 'invoice for', 'bill for', 'charge'];
-    final hasInvoiceKeyword = invoiceKeywords.any((keyword) => lower.contains(keyword));
+    // Check exact match or if input is very short and matches greeting pattern
+    final isGreeting = greetings.contains(lower) || 
+           (lower.length <= 15 && greetings.any((g) => lower.startsWith(g)));
     
-    // If it has question word and compliance keyword, likely a compliance question
-    if (hasQuestionWord && hasComplianceKeyword) {
-      return true;
+    print('DEBUG: Greeting check - Input: "$input", IsGreeting: $isGreeting');
+    return isGreeting;
+  }
+
+  /// Handle greeting messages with a friendly response
+  Future<void> _handleGreeting() async {
+    if (mounted) {
+      setState(() {
+        // Remove loading message
+        _messages.removeWhere((msg) => msg['type'] == 'loading');
+        
+        _messages.add({
+          'type': 'assistant',
+          'text': '''Hello! 👋 I'm your AI Invoice Assistant.
+
+I can help you with:
+
+📋 **Create Invoices**
+   • From voice: "Create an invoice for ABC Corp"
+   • From receipt: Attach a photo
+
+📚 **Compliance Questions**
+   • "What is LHDN compliance?"
+   • "When is MyInvois mandatory?"
+   • "What are the SST requirements?"
+
+How can I assist you today?''',
+          'timestamp': DateTime.now(),
+        });
+        _isProcessing = false;
+      });
+      
+      _scrollToBottom();
     }
-    
-    // If it has compliance keyword but no invoice keywords, likely compliance
-    if (hasComplianceKeyword && !hasInvoiceKeyword) {
-      return true;
+  }
+
+  /// Detect user intent using Gemini AI
+  /// Returns true if input is a compliance question, false if it's invoice creation
+  Future<bool> _detectUserIntent(String input) async {
+    try {
+      // Get API key
+      final apiKey = dotenv.env['GEMINI_API_KEY'];
+      if (apiKey == null || apiKey.isEmpty) {
+        throw Exception('GEMINI_API_KEY not found in .env file');
+      }
+      
+      // Create a fresh model instance for each classification to avoid conversation history issues
+      final model = GenerativeModel(
+        model: 'gemini-2.5-flash-lite',
+        apiKey: apiKey,
+        generationConfig: GenerationConfig(
+          temperature: 0.1, // Low temperature for consistent classification
+          topK: 1,
+          topP: 0.95,
+          maxOutputTokens: 50, // Short response needed
+        ),
+        safetySettings: [
+          SafetySetting(HarmCategory.harassment, HarmBlockThreshold.none),
+          SafetySetting(HarmCategory.hateSpeech, HarmBlockThreshold.none),
+          SafetySetting(HarmCategory.sexuallyExplicit, HarmBlockThreshold.none),
+          SafetySetting(HarmCategory.dangerousContent, HarmBlockThreshold.none),
+        ],
+      );
+      
+      final prompt = '''
+Classify this user input into ONE category.
+
+User input: "$input"
+
+Rules:
+- If CLEARLY asking about LHDN, MyInvois rules, tax, compliance, regulations, deadlines → respond: compliance_question
+- If CLEARLY requesting to create/generate/make an invoice with details → respond: invoice_creation
+- If unclear, ambiguous, or requesting clarification → respond: invoice_creation
+
+Examples:
+- "What is LHDN compliance deadline?" → compliance_question
+- "Create invoice for ABC Corp RM500" → invoice_creation
+- "Tell me about invoice rules" → compliance_question
+- "Invoice for client" → invoice_creation
+- "What should I know" → invoice_creation
+
+Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
+
+      // Use generateContent with a list of Content objects
+      final content = [Content.text(prompt)];
+      final response = await model.generateContent(content);
+      final classification = response.text?.trim().toLowerCase() ?? '';
+      
+      print('DEBUG: AI Classification - Input: "$input", Result: "$classification"');
+      
+      // Return true if it's a compliance question
+      if (classification.contains('compliance')) {
+        return true;
+      } else if (classification.contains('invoice')) {
+        return false;
+      } else {
+        // Fallback: If AI response is unclear, use simple heuristic
+        print('DEBUG: AI classification unclear, using fallback heuristic');
+        final lower = input.toLowerCase();
+        final hasQuestionMarker = lower.contains('?') || 
+                                   lower.startsWith('what') || 
+                                   lower.startsWith('how') || 
+                                   lower.startsWith('when') ||
+                                   lower.startsWith('why') ||
+                                   lower.contains('can i') ||
+                                   lower.contains('should i');
+        final hasInvoiceAction = lower.contains('create') || 
+                                  lower.contains('generate') || 
+                                  lower.contains('make invoice');
+        return hasQuestionMarker && !hasInvoiceAction;
+      }
+    } catch (e) {
+      print('DEBUG: Error in AI classification: $e, using fallback');
+      // Fallback to simple keyword detection if AI fails
+      final lower = input.toLowerCase();
+      return lower.contains('?') || 
+             lower.contains('what') || 
+             lower.contains('how') ||
+             (lower.contains('lhdn') || lower.contains('compliance') || lower.contains('tax'));
     }
-    
-    // If it explicitly asks about invoicing (not creation), treat as compliance
-    if (lower.contains('about invoic') || lower.contains('invoic rule') || 
-        lower.contains('invoic requir')) {
-      return true;
-    }
-    
-    // Default to invoice generation if unclear
-    return false;
   }
 
   /// Handle compliance questions using Knowledge Assistant
@@ -258,6 +366,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
           if (complianceAnswer.sources.isNotEmpty) {
             responseText.writeln('\n📚 **Sources:**');
             for (var source in complianceAnswer.sources) {
+              print('DEBUG UI: Rendering source: $source');
               responseText.writeln('  • $source');
             }
           }
@@ -907,13 +1016,18 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                         ],
                         if (message['text'] != null &&
                             message['text'].isNotEmpty)
-                          Text(
-                            message['text'],
-                            style: TextStyle(
-                              color: isUser ? Colors.white : Colors.black87,
-                              fontSize: 14,
-                            ),
-                          ),
+                          isCompliance
+                              ? _MarkdownText(
+                                  text: message['text'],
+                                  textColor: Colors.black87,
+                                )
+                              : Text(
+                                  message['text'],
+                                  style: TextStyle(
+                                    color: isUser ? Colors.white : Colors.black87,
+                                    fontSize: 14,
+                                  ),
+                                ),
                         if (message['invoice'] != null)
                           _buildInvoicePreviewCard(message['invoice']),
                       ],
@@ -1699,5 +1813,189 @@ class _LoadingMessageBubbleState extends State<_LoadingMessageBubble>
         );
       },
     );
+  }
+}
+
+// Widget to render text with clickable markdown-style links and basic formatting
+class _MarkdownText extends StatelessWidget {
+  final String text;
+  final Color textColor;
+  
+  const _MarkdownText({
+    required this.text,
+    required this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    print('DEBUG MarkdownText: Received text length=${text.length}');
+    print('DEBUG MarkdownText: Text preview: ${text.substring(0, text.length > 200 ? 200 : text.length)}');
+    
+    return RichText(
+      text: TextSpan(
+        children: _parseMarkdown(text, context),
+        style: TextStyle(color: textColor, fontSize: 14, height: 1.5),
+      ),
+    );
+  }
+  
+  List<InlineSpan> _parseMarkdown(String text, BuildContext context) {
+    final spans = <InlineSpan>[];
+    int currentIndex = 0;
+    int linksFound = 0;
+    int boldFound = 0;
+    
+    while (currentIndex < text.length) {
+      // Check for link [text](url)
+      final linkMatch = RegExp(r'\[([^\]]+)\]\(([^\)]+)\)').matchAsPrefix(text, currentIndex);
+      if (linkMatch != null) {
+        final linkText = linkMatch.group(1)!;
+        final url = linkMatch.group(2)!;
+        linksFound++;
+        print('DEBUG MarkdownText: Found link #$linksFound - [$linkText]($url)');
+        
+        spans.add(TextSpan(
+          text: linkText,
+          style: TextStyle(
+            color: Colors.blue[700],
+            fontSize: 14,
+            decoration: TextDecoration.underline,
+            fontWeight: FontWeight.w500,
+          ),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () async {
+              print('DEBUG: Link tapped - Text: "$linkText", URL: "$url"');
+              try {
+                // Convert gs:// to https:// if needed (safety check)
+                var webUrl = url;
+                if (url.startsWith('gs://')) {
+                  webUrl = url.replaceFirst('gs://', 'https://storage.googleapis.com/');
+                  print('DEBUG: Converted gs:// to https:// - New URL: $webUrl');
+                }
+                
+                final uri = Uri.parse(webUrl);
+                print('DEBUG: Parsed URI - Scheme: ${uri.scheme}, Host: ${uri.host}, Path: ${uri.path}');
+                
+                // Try different launch modes with fallbacks
+                bool launched = false;
+                
+                // Try 1: Launch in external browser (preferred)
+                if (!launched) {
+                  try {
+                    print('DEBUG: Attempting LaunchMode.externalApplication');
+                    launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    print('DEBUG: LaunchMode.externalApplication result: $launched');
+                  } catch (e) {
+                    print('DEBUG: LaunchMode.externalApplication failed: $e');
+                  }
+                }
+                
+                // Try 2: Platform default
+                if (!launched) {
+                  try {
+                    print('DEBUG: Attempting LaunchMode.platformDefault');
+                    launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+                    print('DEBUG: LaunchMode.platformDefault result: $launched');
+                  } catch (e) {
+                    print('DEBUG: LaunchMode.platformDefault failed: $e');
+                  }
+                }
+                
+                // Try 3: In-app web view as last resort
+                if (!launched) {
+                  try {
+                    print('DEBUG: Attempting LaunchMode.inAppWebView');
+                    launched = await launchUrl(uri, mode: LaunchMode.inAppWebView);
+                    print('DEBUG: LaunchMode.inAppWebView result: $launched');
+                  } catch (e) {
+                    print('DEBUG: LaunchMode.inAppWebView failed: $e');
+                  }
+                }
+                
+                if (!launched) {
+                  print('DEBUG: All launch attempts failed');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Cannot open link automatically'),
+                            const SizedBox(height: 4),
+                            Text(
+                              webUrl,
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Please copy and paste in your browser',
+                              style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic),
+                            ),
+                          ],
+                        ),
+                        duration: const Duration(seconds: 5),
+                        action: SnackBarAction(
+                          label: 'Copy',
+                          onPressed: () {
+                            // Copy to clipboard functionality would go here
+                            print('TODO: Copy URL to clipboard');
+                          },
+                        ),
+                      ),
+                    );
+                  }
+                } else {
+                  print('DEBUG: Successfully launched URL');
+                }
+              } catch (e) {
+                print('DEBUG: Error launching URL: $e');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error opening link: ${e.toString()}'),
+                      duration: const Duration(seconds: 3),
+                    ),
+                  );
+                }
+              }
+            },
+        ));
+        
+        currentIndex = linkMatch.end;
+        continue;
+      }
+      
+      // Check for bold **text**
+      final boldMatch = RegExp(r'\*\*([^\*]+)\*\*').matchAsPrefix(text, currentIndex);
+      if (boldMatch != null) {
+        boldFound++;
+        spans.add(TextSpan(
+          text: boldMatch.group(1),
+          style: TextStyle(
+            color: textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ));
+        
+        currentIndex = boldMatch.end;
+        continue;
+      }
+      
+      // Regular character
+      spans.add(TextSpan(
+        text: text[currentIndex],
+        style: TextStyle(
+          color: textColor,
+          fontSize: 14,
+        ),
+      ));
+      
+      currentIndex++;
+    }
+    
+    print('DEBUG MarkdownText: Parsing complete - $linksFound links, $boldFound bold sections, ${spans.length} total spans');
+    return spans;
   }
 }

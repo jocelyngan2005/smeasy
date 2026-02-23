@@ -97,6 +97,21 @@ class KnowledgeAssistantService {
     }).toList();
   }
 
+  /// Extract filename from URI for display
+  String _extractFilenameFromUri(String uri) {
+    try {
+      // Remove query parameters and fragments
+      final cleanUri = uri.split('?').first.split('#').first;
+      // Get last path segment
+      final segments = cleanUri.split('/');
+      final filename = segments.last;
+      // Remove file extension and decode percent encoding
+      return Uri.decodeComponent(filename.replaceAll(RegExp(r'\.[^.]+$'), ''));
+    } catch (e) {
+      return 'LHDN Document';
+    }
+  }
+
   /// Persist a [ComplianceQuestion] to /compliance_questions.
   Future<void> _saveQuestion(
       ComplianceQuestion q, String userId) async {
@@ -133,16 +148,62 @@ class KnowledgeAssistantService {
       String answer = searchResult.summary ?? 
           'No specific answer found in compliance documents.';
 
-      // Extract sources from citations
-      final sources = searchResult.citations
-          .expand((citation) => citation.sources)
-          .map((source) => source.title ?? 'LHDN Document')
-          .toSet() // Remove duplicates
-          .toList();
+      // Extract sources from citations with URIs
+      final sources = <String>[];
+      final seenUris = <String>{};
+      
+      print('DEBUG: Processing ${searchResult.citations.length} citations');
+      
+      for (final citation in searchResult.citations) {
+        for (final source in citation.sources) {
+          final uri = source.uri ?? source.referenceId;
+          print('DEBUG: Citation source - URI: $uri, Title: ${source.title}');
+          
+          if (uri.isNotEmpty && !seenUris.contains(uri)) {
+            seenUris.add(uri);
+            
+            // Convert gs:// to https:// if needed
+            final webUri = uri.startsWith('gs://') 
+                ? uri.replaceFirst('gs://', 'https://storage.googleapis.com/')
+                : uri;
+            
+            // Format source with URI if available (only use web-accessible URLs)
+            final title = source.title ?? _extractFilenameFromUri(uri);
+            final formattedSource = webUri.startsWith('http') 
+                ? '[$title]($webUri)' 
+                : title;
+            sources.add(formattedSource);
+            print('DEBUG: Added source: $formattedSource');
+          }
+        }
+      }
+      
+      // Also add sources from search results if citations are empty
+      if (sources.isEmpty) {
+        print('DEBUG: No citation sources, trying ${searchResult.results.length} search results');
+        for (final result in searchResult.results) {
+          print('DEBUG: Search result - URI: ${result.uri}, Title: ${result.title}');
+          if (result.uri != null && result.uri!.isNotEmpty && !seenUris.contains(result.uri!)) {
+            seenUris.add(result.uri!);
+            
+            // Convert gs:// to https:// if needed
+            final webUri = result.uri!.startsWith('gs://') 
+                ? result.uri!.replaceFirst('gs://', 'https://storage.googleapis.com/')
+                : result.uri!;
+            
+            final title = result.title ?? _extractFilenameFromUri(result.uri!);
+            final formattedSource = webUri.startsWith('http') 
+                ? '[$title]($webUri)' 
+                : title;
+            sources.add(formattedSource);
+            print('DEBUG: Added source from result: $formattedSource');
+          }
+        }
+      }
 
       // Add fallback sources if none found
       if (sources.isEmpty) {
-        sources.addAll(['LHDN MyInvois Guidelines 2026']);
+        sources.addAll(['LHDN MyInvois Guidelines 2026 (no direct link available)']);
       }
 
       // Determine category
@@ -157,11 +218,41 @@ class KnowledgeAssistantService {
           .toList();
 
       // Calculate confidence based on search quality
-      double confidence = 0.85; // Base confidence for Vertex AI
-      if (searchResult.summary != null && searchResult.summary!.length > 100) {
-        confidence += 0.1;
+      double confidence = 0.5; // Base confidence
+      
+      // Boost confidence based on summary quality
+      if (searchResult.summary != null) {
+        if (searchResult.summary!.length > 200) {
+          confidence += 0.25;
+        } else if (searchResult.summary!.length > 100) {
+          confidence += 0.15;
+        } else {
+          confidence += 0.08;
+        }
       }
-      if (searchResult.citations.isNotEmpty) {
+      
+      // Boost confidence based on number of citations
+      final citationCount = searchResult.citations.length;
+      if (citationCount >= 3) {
+        confidence += 0.15;
+      } else if (citationCount >= 2) {
+        confidence += 0.10;
+      } else if (citationCount >= 1) {
+        confidence += 0.05;
+      }
+      
+      // Boost confidence based on number of search results
+      final resultCount = searchResult.results.length;
+      if (resultCount >= 5) {
+        confidence += 0.10;
+      } else if (resultCount >= 3) {
+        confidence += 0.05;
+      }
+      
+      // Slight boost if sources have URIs (grounded in actual documents)
+      final hasUris = searchResult.citations
+          .any((c) => c.sources.any((s) => s.uri != null && s.uri!.isNotEmpty));
+      if (hasUris) {
         confidence += 0.05;
       }
 
