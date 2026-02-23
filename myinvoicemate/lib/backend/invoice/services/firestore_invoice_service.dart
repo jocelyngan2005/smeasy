@@ -26,7 +26,8 @@ class FirestoreInvoiceService {
   /// Save a finalized invoice. Returns the Firestore document ID.
   Future<String> saveInvoice(Invoice invoice) async {
     final doc = _invoices.doc(invoice.id.isEmpty ? null : invoice.id);
-    await doc.set(_toFirestoreMap(invoice.toJson()..['id'] = doc.id));
+    await doc.set(_toFirestoreMap(invoice.toJson()..['id'] = doc.id)
+      ..['isDeleted'] = false);
     return doc.id;
   }
 

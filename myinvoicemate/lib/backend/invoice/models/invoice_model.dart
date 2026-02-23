@@ -148,7 +148,7 @@ class Invoice {
   }
 }
 
-@JsonSerializable()
+@JsonSerializable(explicitToJson: true)
 class PartyInfo {
   final String name;
   final String? tin; // Tax Identification Number

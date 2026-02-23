@@ -125,7 +125,7 @@ Map<String, dynamic> _$PartyInfoToJson(PartyInfo instance) => <String, dynamic>{
   'sstNumber': instance.sstNumber,
   'email': instance.email,
   'phone': instance.phone,
-  'address': instance.address,
+  'address': instance.address.toJson(),
   'contactPerson': instance.contactPerson,
 };
 

@@ -99,87 +99,124 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
     return _lineItems.fold(0.0, (sum, item) => sum + item.getTotal());
   }
 
-  Future<void> _saveInvoice() async {
+  /// Builds the [Invoice] object from current form state without saving.
+  Invoice _buildInvoiceFromForm(String status) {
+    final lineItems = _lineItems.map((item) {
+      return InvoiceLineItemHelper.createSimple(
+        description: item.descriptionController.text,
+        quantity: double.tryParse(item.quantityController.text) ?? 0.0,
+        unitPrice: double.tryParse(item.unitPriceController.text) ?? 0.0,
+        taxRate: item.taxRate,
+        unit: item.unit,
+      );
+    }).toList();
+
+    return InvoiceBuilder.fromSimpleData(
+      id: _uuid.v4(),
+      invoiceNumber: _invoiceNumberController.text,
+      sellerId: AuthService.instance.currentUserId ?? '',
+      sellerName: _sellerNameController.text,
+      sellerTin: _sellerTinController.text,
+      sellerIdentificationNumber: _sellerIdNumberController.text,
+      sellerContactNumber: _sellerContactController.text,
+      sellerSstNumber: _sellerSstController.text,
+      sellerEmail: _sellerEmailController.text,
+      sellerAddress1: _sellerAddress1Controller.text,
+      sellerAddress2: _sellerAddress2Controller.text.isNotEmpty ? _sellerAddress2Controller.text : null,
+      sellerCity: _sellerCityController.text,
+      sellerState: _sellerStateController.text,
+      sellerPostalCode: _sellerPostalCodeController.text,
+      buyerId: '',
+      buyerName: _buyerNameController.text,
+      buyerTin: _buyerTinController.text,
+      buyerIdentificationNumber: _buyerIdNumberController.text.isNotEmpty ? _buyerIdNumberController.text : null,
+      buyerContactNumber: _buyerContactController.text,
+      buyerSstNumber: _buyerSstController.text.isNotEmpty ? _buyerSstController.text : null,
+      buyerEmail: _buyerEmailController.text.isNotEmpty ? _buyerEmailController.text : null,
+      buyerAddress1: _buyerAddress1Controller.text,
+      buyerAddress2: _buyerAddress2Controller.text.isNotEmpty ? _buyerAddress2Controller.text : null,
+      buyerCity: _buyerCityController.text,
+      buyerState: _buyerStateController.text,
+      buyerPostalCode: _buyerPostalCodeController.text,
+      issueDate: _issueDate,
+      dueDate: _dueDate,
+      lineItems: lineItems,
+      subtotal: _calculateSubtotal(),
+      taxAmount: _calculateTaxAmount(),
+      totalAmount: _calculateTotal(),
+      status: status,
+      createdBy: AuthService.instance.currentUserId ?? '',
+      source: InvoiceSource.manual,
+      notes: _notesController.text.isNotEmpty ? _notesController.text : null,
+    );
+  }
+
+  bool _validateForm() {
     if (!_formKey.currentState!.validate()) {
       Helpers.showErrorSnackbar(context, 'Please fill in all required fields');
-      return;
+      return false;
     }
-
-    // Validate line items
     for (var item in _lineItems) {
       if (!item.isValid()) {
         Helpers.showErrorSnackbar(context, 'Please complete all line item details');
-        return;
+        return false;
       }
     }
+    return true;
+  }
 
+  /// Saves the invoice as a draft (no validation — empty fields are allowed).
+  Future<void> _saveAsDraft() async {
     setState(() => _isSaving = true);
-
     try {
-      final lineItems = _lineItems.map((item) {
-        return InvoiceLineItemHelper.createSimple(
-          description: item.descriptionController.text,
-          quantity: double.parse(item.quantityController.text),
-          unitPrice: double.parse(item.unitPriceController.text),
-          taxRate: item.taxRate,
-          unit: item.unit,
-        );
-      }).toList();
-
-      final invoice = InvoiceBuilder.fromSimpleData(
-        id: _uuid.v4(),
-        invoiceNumber: _invoiceNumberController.text,
-        sellerId: 'user123',
-        sellerName: _sellerNameController.text,
-        sellerTin: _sellerTinController.text,
-        sellerIdentificationNumber: _sellerIdNumberController.text,
-        sellerContactNumber: _sellerContactController.text,
-        sellerSstNumber: _sellerSstController.text,
-        sellerEmail: _sellerEmailController.text,
-        sellerAddress1: _sellerAddress1Controller.text,
-        sellerAddress2: _sellerAddress2Controller.text.isNotEmpty ? _sellerAddress2Controller.text : null,
-        sellerCity: _sellerCityController.text,
-        sellerState: _sellerStateController.text,
-        sellerPostalCode: _sellerPostalCodeController.text,
-        buyerId: '',
-        buyerName: _buyerNameController.text,
-        buyerTin: _buyerTinController.text,
-        buyerIdentificationNumber: _buyerIdNumberController.text.isNotEmpty ? _buyerIdNumberController.text : null,
-        buyerContactNumber: _buyerContactController.text,
-        buyerSstNumber: _buyerSstController.text.isNotEmpty ? _buyerSstController.text : null,
-        buyerEmail: _buyerEmailController.text.isNotEmpty ? _buyerEmailController.text : null,
-        buyerAddress1: _buyerAddress1Controller.text,
-        buyerAddress2: _buyerAddress2Controller.text.isNotEmpty ? _buyerAddress2Controller.text : null,
-        buyerCity: _buyerCityController.text,
-        buyerState: _buyerStateController.text,
-        buyerPostalCode: _buyerPostalCodeController.text,
-        issueDate: _issueDate,
-        dueDate: _dueDate,
-        lineItems: lineItems,
-        subtotal: _calculateSubtotal(),
-        taxAmount: _calculateTaxAmount(),
-        totalAmount: _calculateTotal(),
-        status: AppConstants.statusDraft,
-        createdBy: 'user123',
-        source: InvoiceSource.manual,
-        notes: _notesController.text.isNotEmpty ? _notesController.text : null,
-      );
-
+      final invoice = _buildInvoiceFromForm(AppConstants.statusDraft);
       await _invoiceService.createInvoice(invoice);
-
       if (mounted) {
-        Helpers.showSuccessSnackbar(context, 'Invoice created successfully');
+        Helpers.showSuccessSnackbar(context, 'Invoice saved as draft');
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
-        Helpers.showErrorSnackbar(context, 'Failed to create invoice: $e');
+        Helpers.showErrorSnackbar(context, 'Failed to save draft: $e');
       }
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  /// Runs the mocked LHDN e-Invoice validation flow then saves to Firebase.
+  Future<void> _saveAndVerify() async {
+    if (!_validateForm()) return;
+
+    // Show the mock validation dialog
+    final passed = await _showValidationDialog();
+    if (passed != true || !mounted) return;
+
+    setState(() => _isSaving = true);
+    try {
+      final invoice = _buildInvoiceFromForm(AppConstants.statusSubmitted);
+      await _invoiceService.createInvoice(invoice);
+      if (mounted) {
+        Helpers.showSuccessSnackbar(context, 'Invoice submitted successfully');
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        Helpers.showErrorSnackbar(context, 'Failed to save invoice: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  /// Shows the mocked LHDN 7-step validation dialog.
+  /// Returns `true` when all checks pass (always, since it is mocked).
+  Future<bool?> _showValidationDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _LhdnValidationDialog(),
+    );
   }
 
   @override
@@ -368,11 +405,12 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
         child: ExpansionTile(
           initiallyExpanded: true,
           title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Buyer Information',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              const Expanded(
+                child: Text(
+                  'Buyer Information',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
               ),
               Container(
                 decoration: BoxDecoration(
@@ -562,9 +600,46 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          title: const Text(
-            'Seller Information',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          title: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Seller Information',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, AppColors.primaryDark],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: _importSellerProfile,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.business_center, size: 16, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            'My Profile',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           children: [
             Padding(
@@ -1017,22 +1092,23 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
     return Row(
       children: [
         Expanded(
-          child: ElevatedButton(
-            onPressed: _isSaving ? null : _handleCancel,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.grey[300],
-              foregroundColor: Colors.black,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          child: ElevatedButton.icon(
+            onPressed: _isSaving ? null : _saveAsDraft,
+            icon: const Icon(Icons.save_outlined, size: 18),
+            label: const Text(
+              'Save as Draft',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey[300],
+              foregroundColor: Colors.black87,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           ),
@@ -1041,41 +1117,44 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              gradient: _isSaving ? null : const LinearGradient(
-                colors: [AppColors.primary, AppColors.primaryDark],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              gradient: _isSaving
+                  ? null
+                  : const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryDark],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: ElevatedButton(
-              onPressed: _isSaving ? null : _saveInvoice,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isSaving ? null : Colors.transparent,
-                foregroundColor: Colors.white,
-                shadowColor: Colors.transparent,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: _isSaving
+            child: ElevatedButton.icon(
+              onPressed: _isSaving ? null : _saveAndVerify,
+              icon: _isSaving
                   ? const SizedBox(
-                      height: 20,
-                      width: 20,
+                      height: 18,
+                      width: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color: Colors.white,
                       ),
                     )
-                  : const Text(
-                      'Save Invoice',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                  : const Icon(Icons.verified_outlined, size: 18),
+              label: Text(
+                _isSaving ? 'Saving...' : 'Save & Verify',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isSaving ? null : Colors.transparent,
+                foregroundColor: Colors.white,
+                shadowColor: Colors.transparent,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
           ),
         ),
@@ -1083,47 +1162,32 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
     );
   }
 
-  void _handleCancel() async {
-    // Check if any data has been entered
-    final hasData = _buyerNameController.text.isNotEmpty ||
-        _buyerTinController.text.isNotEmpty ||
-        _lineItems.any((item) => item.descriptionController.text.isNotEmpty);
+  // _handleCancel removed — replaced by _saveAsDraft button.
 
-    if (!hasData) {
-      Navigator.pop(context);
+  void _importSellerProfile() {
+    final profile = AuthService.instance.currentUser;
+    if (profile == null) {
+      Helpers.showErrorSnackbar(
+        context,
+        'No profile found. Please complete your profile in Settings.',
+      );
       return;
     }
 
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Save as Draft?'),
-        content: const Text(
-          'You have unsaved changes. Would you like to save this invoice as a draft before leaving?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'discard'),
-            child: const Text('Discard'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'cancel'),
-            child: const Text('Continue Editing'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, 'draft'),
-            child: const Text('Save as Draft'),
-          ),
-        ],
-      ),
-    );
+    setState(() {
+      _sellerNameController.text = profile.businessName;
+      _sellerTinController.text = profile.tin;
+      _sellerContactController.text = profile.phone;
+      _sellerEmailController.text = profile.email;
+      if (profile.ssmNumber != null && profile.ssmNumber!.isNotEmpty) {
+        _sellerSstController.text = profile.ssmNumber!;
+      }
+      if (profile.address.isNotEmpty) {
+        _sellerAddress1Controller.text = profile.address;
+      }
+    });
 
-    if (result == 'discard') {
-      if (mounted) Navigator.pop(context);
-    } else if (result == 'draft') {
-      await _saveInvoice();
-    }
-    // If 'cancel', do nothing (continue editing)
+    Helpers.showSuccessSnackbar(context, 'Business profile imported successfully');
   }
 
   void _importCustomer() async {
@@ -1354,6 +1418,297 @@ class _CustomerSelectionDialogState extends State<_CustomerSelectionDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+// ---------------------------------------------------------------------------
+// LHDN Mock Validation Dialog
+// ---------------------------------------------------------------------------
+
+enum _ValidationState { pending, running, passed }
+
+class _ValidationStep {
+  final String name;
+  final String type; // 'Immediate' | 'Background'
+  final String description;
+  _ValidationState state;
+
+  _ValidationStep({
+    required this.name,
+    required this.type,
+    required this.description,
+    this.state = _ValidationState.pending,
+  });
+}
+
+class _LhdnValidationDialog extends StatefulWidget {
+  const _LhdnValidationDialog();
+
+  @override
+  State<_LhdnValidationDialog> createState() => _LhdnValidationDialogState();
+}
+
+class _LhdnValidationDialogState extends State<_LhdnValidationDialog> {
+  final List<_ValidationStep> _steps = [
+    _ValidationStep(
+      name: 'Structure Validator',
+      type: 'Immediate',
+      description: 'Document structure & UBL 2.1 compliance',
+    ),
+    _ValidationStep(
+      name: 'Core Fields Validator',
+      type: 'Immediate',
+      description: 'Mandatory data fields',
+    ),
+    _ValidationStep(
+      name: 'Code Validator',
+      type: 'Immediate',
+      description: 'Currency, tax types & code references',
+    ),
+    _ValidationStep(
+      name: 'Signature Validator',
+      type: 'Background',
+      description: 'Document digital signature',
+    ),
+    _ValidationStep(
+      name: 'Taxpayer Validator',
+      type: 'Background',
+      description: 'Issuer & buyer taxpayer validity',
+    ),
+    _ValidationStep(
+      name: 'Referenced Documents Validator',
+      type: 'Background',
+      description: 'Credit / debit / refund note references',
+    ),
+    _ValidationStep(
+      name: 'Duplicate Document Validator',
+      type: 'Background',
+      description: 'Duplicate submission detection',
+    ),
+  ];
+
+  bool _allDone = false;
+
+  // Delay per step in milliseconds (simulating immediate vs background)
+  static const _immediateDelay = 650;
+  static const _backgroundDelay = 900;
+
+  @override
+  void initState() {
+    super.initState();
+    _runValidation();
+  }
+
+  Future<void> _runValidation() async {
+    for (var i = 0; i < _steps.length; i++) {
+      final step = _steps[i];
+      if (!mounted) return;
+      setState(() => step.state = _ValidationState.running);
+
+      final delay = step.type == 'Immediate' ? _immediateDelay : _backgroundDelay;
+      await Future.delayed(Duration(milliseconds: delay));
+
+      if (!mounted) return;
+      setState(() => step.state = _ValidationState.passed);
+    }
+
+    if (mounted) setState(() => _allDone = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryDark],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.security, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'LHDN e-Invoice Validation',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Running compliance checks…',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+
+            // Validation steps list
+            ..._steps.map((step) => _buildStepRow(step)),
+
+            const SizedBox(height: 16),
+
+            // All done banner
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              child: _allDone
+                  ? Container(
+                      key: const ValueKey('done'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.success.withOpacity(0.4)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.check_circle, color: AppColors.success, size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'All validations passed! Invoice is ready for submission.',
+                              style: TextStyle(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(key: ValueKey('progress'), height: 0),
+            ),
+
+            if (_allDone) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryDark],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context, true),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text(
+                      'Save & Submit',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      shadowColor: Colors.transparent,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepRow(_ValidationStep step) {
+    final isPending = step.state == _ValidationState.pending;
+    final isRunning = step.state == _ValidationState.running;
+    final isPassed = step.state == _ValidationState.passed;
+
+    Widget leadingIcon;
+    if (isPassed) {
+      leadingIcon = const Icon(Icons.check_circle, color: AppColors.success, size: 20);
+    } else if (isRunning) {
+      leadingIcon = const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2.2,
+          valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+        ),
+      );
+    } else {
+      leadingIcon = Icon(Icons.radio_button_unchecked, color: Colors.grey[350], size: 20);
+    }
+
+    final typeBadgeColor = step.type == 'Immediate'
+        ? Colors.blue.withOpacity(0.12)
+        : Colors.orange.withOpacity(0.12);
+    final typeBadgeText = step.type == 'Immediate' ? Colors.blue[700]! : Colors.orange[700]!;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          leadingIcon,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  step.name,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isPending ? Colors.grey[400] : Colors.black87,
+                  ),
+                ),
+                Text(
+                  step.description,
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: isPending ? Colors.grey[100] : typeBadgeColor,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              step.type,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: isPending ? Colors.grey[400] : typeBadgeText,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
