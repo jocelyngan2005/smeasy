@@ -58,7 +58,19 @@ class _InvoiceListScreenState extends State<InvoiceListScreen>
     try {
       final authService = context.read<AuthService>();
       final userId = authService.currentUserId ?? '';
-      _userTin = authService.currentUser?.tin ?? '';
+
+      // After a hot restart the async authStateChanges listener may not have
+      // finished populating _currentUser yet, so fall back to the stream if
+      // the synchronous cache is empty.
+      var cachedUser = authService.currentUser;
+      if (cachedUser == null) {
+        cachedUser = await authService.userStream.first.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => null,
+        );
+      }
+      _userTin = cachedUser?.tin ?? '';
+
       final invoices = await _invoiceService.getInvoicesByUser(userId);
       setState(() {
         _invoices = invoices;
