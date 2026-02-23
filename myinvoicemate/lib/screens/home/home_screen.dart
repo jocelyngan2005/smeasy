@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../backend/auth/services/auth_service.dart';
 import '../../backend/compliance/services/compliance_service.dart';
 import '../../backend/invoice/services/firestore_invoice_service.dart';
 import '../../backend/analytics/services/analytics_service.dart';
+import '../../backend/analytics/services/ai_recommendations_service.dart';
+import '../../backend/analytics/services/bigquery_service.dart';
+import '../../backend/analytics/services/looker_studio_helper.dart';
 import '../../backend/analytics/models/analytics_model.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
@@ -21,13 +25,16 @@ class _HomeScreenState extends State<HomeScreen> {
   final _complianceService = ComplianceService();
   final _invoiceService = FirestoreInvoiceService();
   final _analyticsService = AnalyticsService();
+  final _aiRecommendationsService = AIRecommendationsService();
+  final _bigQueryService = BigQueryService();
   bool _isLoading = true;
+  bool _isExportingToBigQuery = false;
   int _pendingInvoices = 0;
   int _totalInvoices = 0;
   double _complianceScore = 0;
   AnalyticsData? _analyticsData;
   int _touchedIndex = -1;
-  List<String> _recommendations = [];
+  List<AIRecommendation> _aiRecommendations = [];
 
   @override
   void initState() {
@@ -45,18 +52,86 @@ class _HomeScreenState extends State<HomeScreen> {
       final stats = await _complianceService.getComplianceStats(userId);
       final invoices = await _invoiceService.getInvoicesByUser(userId);
       final analytics = await _analyticsService.getAnalytics(userId);
-      final recommendations = _complianceService.getComplianceRecommendations();
+      final aiRecommendations = await _aiRecommendationsService.getCachedRecommendations(userId);
 
       setState(() {
         _pendingInvoices = stats.pendingSubmissions;
         _totalInvoices = invoices.length;
         _complianceScore = stats.complianceScore;
         _analyticsData = analytics;
-        _recommendations = recommendations;
+        _aiRecommendations = aiRecommendations;
         _isLoading = false;
       });
+
+      // Generate fresh AI recommendations in background
+      _refreshAIRecommendations();
     } catch (e) {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _refreshAIRecommendations() async {
+    try {
+      final authService = context.read<AuthService>();
+      final userId = authService.currentUserId ?? '';
+      final recommendations = await _aiRecommendationsService.generateRecommendations(userId);
+      if (mounted) {
+        setState(() {
+          _aiRecommendations = recommendations;
+        });
+      }
+    } catch (e) {
+      print('Error refreshing AI recommendations: $e');
+    }
+  }
+
+  Future<void> _exportToBigQuery() async {
+    setState(() => _isExportingToBigQuery = true);
+    try {
+      final authService = context.read<AuthService>();
+      final userId = authService.currentUserId ?? '';
+      
+      final success = await _bigQueryService.exportInvoicesToBigQuery(userId);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success 
+                ? 'Data exported to BigQuery successfully!'
+                : 'Export failed. Please try again.'),
+            backgroundColor: success ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isExportingToBigQuery = false);
+      }
+    }
+  }
+
+  Future<void> _openLookerStudio() async {
+    final url = Uri.parse(LookerStudioHelper.getConnectionUrl());
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open Looker Studio'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -111,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
               // Quick Stats
               if (_isLoading)
@@ -131,11 +206,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildStatusChart(),
                 const SizedBox(height: 24),
 
-                // Recommendations
-                if (_recommendations.isNotEmpty) ...[
-                  _buildRecommendationsCard(),
+                // AI Recommendations
+                if (_aiRecommendations.isNotEmpty) ...[
+                  _buildAIRecommendationsCard(),
                   const SizedBox(height: 24),
                 ],
+
+                // Analytics Actions
+                _buildAnalyticsActionsCard(),
+                const SizedBox(height: 24),
 
                 // Top Customers
                 _buildSectionTitle('Top Customers'),
@@ -585,55 +664,328 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildRecommendationsCard() {
+  Widget _buildAIInsightsBanner() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF2E3193).withOpacity(0.1),
-        border: Border.all(
-          color: const Color(0xFF2E3193),
-          width: 2,
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF2E3193).withOpacity(0.8),
+            const Color(0xFF0533F4).withOpacity(0.8),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(20),
+      child: Row(
         children: [
-          const Text(
-            'Recommendations',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2E3193),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.auto_awesome,
+              color: Colors.white,
+              size: 32,
             ),
           ),
-          const SizedBox(height: 12),
-          ..._recommendations.map((recommendation) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.lightbulb_outline,
-                    color: Colors.amber,
-                    size: 20,
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'AI-Powered Insights',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      recommendation,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_aiRecommendations.length} personalized recommendations ready',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _refreshAIRecommendations,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAIRecommendationsCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey[300]!, width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.psychology,
+                  color: Color(0xFF2E3193),
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'AI Recommendations',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E3193),
+                  ),
+                ),
+                Spacer(), 
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Color(0xFF2E3193)),
+                  onPressed: _refreshAIRecommendations,
+                ),          
+              ],
+            ),
+            const SizedBox(height: 20),
+            ..._aiRecommendations.take(5).map((rec) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Color(rec.priorityColor).withOpacity(0.3),
+                    width: 2,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Color(rec.priorityColor),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            rec.priority.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          rec.categoryIcon,
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          rec.category,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      rec.title,
                       style: const TextStyle(
-                        fontSize: 14,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                         color: Color(0xFF2E3193),
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      rec.description,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[700],
+                        height: 1.4,
+                      ),
+                    ),
+                    if (rec.impact.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.trending_up,
+                              size: 14,
+                              color: Colors.green,
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'Impact: ${rec.impact}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsActionsCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey[300]!, width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Advanced Analytics',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2E3193),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildActionButton(
+              icon: Icons.cloud_upload,
+              title: 'Export to BigQuery',
+              description: 'Sync data for advanced analysis',
+              color: const Color(0xFF4285F4),
+              isLoading: _isExportingToBigQuery,
+              onTap: _exportToBigQuery,
+            ),
+            const SizedBox(height: 12),
+            _buildActionButton(
+              icon: Icons.dashboard,
+              title: 'Open Looker Studio',
+              description: 'Create interactive dashboards',
+              color: const Color(0xFF0F9D58),
+              onTap: _openLookerStudio,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String title,
+    required String description,
+    required Color color,
+    bool isLoading = false,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: isLoading ? null : onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: color.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
                     ),
                   ),
                 ],
               ),
-            );
-          }).toList(),
-        ],
+            ),
+            if (isLoading)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(
+                Icons.arrow_forward_ios,
+                color: color,
+                size: 16,
+              ),
+          ],
+        ),
       ),
     );
   }
