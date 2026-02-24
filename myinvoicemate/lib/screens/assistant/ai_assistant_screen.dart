@@ -494,6 +494,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
             'type': 'assistant',
             'text': responseText.toString(),
             'invoice': invoice,
+            'isSaved': false,
             'timestamp': DateTime.now(),
           });
           _previewInvoice = invoice;
@@ -638,29 +639,32 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
     );
   }
 
-  Future<void> _saveInvoice() async {
-    if (_previewInvoice == null) return;
-
+  Future<void> _saveInvoice(Invoice invoice, int messageIndex) async {
     setState(() => _isProcessing = true);
 
     try {
-      await _invoiceService.createInvoice(_previewInvoice!);
+      await _invoiceService.createInvoice(invoice);
 
       if (mounted) {
+        setState(() {
+          _messages[messageIndex]['isSaved'] = true;
+        });
         Helpers.showSuccessSnackbar(context, 'Invoice saved successfully!');
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => InvoiceDetailScreen(invoice: _previewInvoice!),
-          ),
-        );
       }
     } catch (e) {
       Helpers.showErrorSnackbar(context, 'Failed to save invoice');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  void _viewInvoice(Invoice invoice) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InvoiceDetailScreen(invoice: invoice),
+      ),
+    );
   }
 
   void _cancelPreview() {
@@ -737,7 +741,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
                       final message = _messages[index];
-                      return _buildMessageBubble(message);
+                      return _buildMessageBubble(message, index);
                     },
                   ),
           ),
@@ -906,7 +910,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
     );
   }
 
-  Widget _buildMessageBubble(Map<String, dynamic> message) {
+  Widget _buildMessageBubble(Map<String, dynamic> message, int index) {
     final isUser = message['type'] == 'user';
     final isError = message['type'] == 'error';
     final isLoading = message['type'] == 'loading';
@@ -1029,7 +1033,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
                                   ),
                                 ),
                         if (message['invoice'] != null)
-                          _buildInvoicePreviewCard(message['invoice']),
+                          _buildInvoicePreviewCard(message['invoice'], message, index),
                       ],
                     ),
                   ),
@@ -1051,7 +1055,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
     );
   }
 
-  Widget _buildInvoicePreviewCard(Invoice invoice) {
+  Widget _buildInvoicePreviewCard(Invoice invoice, Map<String, dynamic> message, int messageIndex) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1655,15 +1659,21 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
+                  gradient: LinearGradient(
+                    colors: (message['isSaved'] as bool? ?? false)
+                        ? [const Color(0xFF1A8B4A), const Color(0xFF2ECC71)]
+                        : [const Color(0xFF2E3193), const Color(0xFF0533F4)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: ElevatedButton(
-                  onPressed: _saveInvoice,
+                  onPressed: _isProcessing
+                      ? null
+                      : (message['isSaved'] as bool? ?? false)
+                          ? () => _viewInvoice(invoice)
+                          : () => _saveInvoice(invoice, messageIndex),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     foregroundColor: Colors.white,
@@ -1674,9 +1684,17 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
                     ),
                     elevation: 0,
                   ),
-                  child: const Text(
-                    'Save',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (message['isSaved'] as bool? ?? false) ...
+                        const [Icon(Icons.visibility, size: 16), SizedBox(width: 6)],
+                      Text(
+                        (message['isSaved'] as bool? ?? false) ? 'View Invoice' : 'Save',
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ),
                 ),
               ),

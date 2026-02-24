@@ -220,6 +220,31 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     }
   }
 
+  Future<void> _deleteInvoice() async {
+    final confirmed = await Helpers.showConfirmDialog(
+      context,
+      title: 'Delete Invoice',
+      message: 'Are you sure you want to delete ${widget.invoice.invoiceNumber}? This cannot be undone.',
+      confirmText: 'Delete',
+    );
+    if (!confirmed) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await _invoiceService.deleteInvoice(widget.invoice.id);
+      if (mounted) {
+        Helpers.showSuccessSnackbar(context, 'Invoice deleted');
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        Helpers.showErrorSnackbar(context, 'Failed to delete invoice');
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -839,38 +864,67 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   }
 
   Widget _buildBottomBar() {
+    final isInvalid =
+        widget.invoice.status.toLowerCase() == AppConstants.statusInvalid;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(color: Color(0xFFF5F5F5)),
-      child: SizedBox(
-        width: double.infinity,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: ElevatedButton.icon(
-            onPressed: _isLoading ? null : _validateInvoice,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.transparent,
-              foregroundColor: Colors.white,
-              shadowColor: Colors.transparent,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
+      child: Row(
+        children: [
+          if (isInvalid) ...
+            [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _deleteInvoice,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    side: const BorderSide(color: AppColors.error),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text(
+                    'Delete',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(8),
               ),
-            ),
-            icon: const Icon(Icons.verified_user),
-            label: const Text(
-              'Verify',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              child: ElevatedButton.icon(
+                onPressed: _isLoading ? null : _validateInvoice,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  foregroundColor: Colors.white,
+                  shadowColor: Colors.transparent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                icon: const Icon(Icons.verified_user),
+                label: const Text(
+                  'Verify',
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

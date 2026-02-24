@@ -23,7 +23,13 @@ class AnalyticsService {
   ///
   /// Falls back to computing live from the invoices collection when the cache
   /// has never been written or is stale (older than 1 hour).
-  Future<AnalyticsData> getAnalytics(String userId) async {
+  /// [months] controls how many months of sales-trend data to include.
+  Future<AnalyticsData> getAnalytics(String userId, {int months = 6}) async {
+    // Non-default periods always compute live (cache stores 6 months)
+    if (months != 6) {
+      return _computeLiveAnalytics(userId, months: months);
+    }
+
     // 1 — try cache
     final cacheDoc = await _cache.doc(userId).get();
     if (cacheDoc.exists) {
@@ -49,8 +55,8 @@ class AnalyticsService {
   }
 
   /// Force-refresh the analytics cache for [userId].
-  Future<AnalyticsData> refreshAnalytics(String userId) async {
-    final analytics = await _computeLiveAnalytics(userId);
+  Future<AnalyticsData> refreshAnalytics(String userId, {int months = 6}) async {
+    final analytics = await _computeLiveAnalytics(userId, months: months);
     await _writeCacheDoc(userId, analytics);
     return analytics;
   }
@@ -101,7 +107,7 @@ class AnalyticsService {
     );
   }
 
-  Future<AnalyticsData> _computeLiveAnalytics(String userId) async {
+  Future<AnalyticsData> _computeLiveAnalytics(String userId, {int months = 6}) async {
     final snap = await _db
         .collection(FirestoreCollections.invoices)
         .where('createdBy', isEqualTo: userId)
@@ -142,16 +148,22 @@ class AnalyticsService {
     final avgValue =
         totalInvoices == 0 ? 0.0 : totalRevenue / totalInvoices;
 
-    // Keep only last 6 months in trend
+    // Keep only last [months] months in trend
     final now = DateTime.now();
-    final trendKeys = List.generate(6, (i) {
+    final trendKeys = List.generate(months, (i) {
       final dt = DateTime(now.year, now.month - i, 1);
       return '${_monthName(dt.month)} ${dt.year}';
     }).reversed.toList();
 
     final salesTrend = trendKeys.map((k) {
+      final parts = k.split(' ');
+      // Include year suffix when showing more than 6 months so the axis
+      // labels remain unambiguous (e.g. "Jan 25" vs plain "Jan").
+      final label = months > 6
+          ? '${parts[0]} ${parts[1].substring(2)}' // "Jan 25"
+          : parts[0]; // "Jan"
       return SalesDataPoint(
-        period: k.split(' ').first, // month name only
+        period: label,
         amount: monthRevenue[k] ?? 0,
         count: 0, // count is secondary; skip expensive recount
       );

@@ -36,6 +36,13 @@ class _HomeScreenState extends State<HomeScreen> {
   int _touchedIndex = -1;
   List<AIRecommendation> _aiRecommendations = [];
 
+  static const _periodOptions = <String, int>{
+    'Last 3 months': 3,
+    'Last 6 months': 6,
+    'Last 12 months': 12,
+  };
+  String _selectedPeriod = 'Last 6 months';
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +58,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final stats = await _complianceService.getComplianceStats(userId);
       final invoices = await _invoiceService.getInvoicesByUser(userId);
-      final analytics = await _analyticsService.getAnalytics(userId);
+      final analytics = await _analyticsService.getAnalytics(
+        userId,
+        months: _periodOptions[_selectedPeriod]!,
+      );
       final aiRecommendations = await _aiRecommendationsService.getCachedRecommendations(userId);
 
       setState(() {
@@ -356,28 +366,58 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
+              PopupMenuButton<String>(
+                onSelected: (period) {
+                  setState(() => _selectedPeriod = period);
+                  _loadDashboardData();
+                },
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: const [
-                    Text(
-                      'Last 6 months',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                    SizedBox(width: 8),
-                    Icon(
-                      Icons.keyboard_arrow_down,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ],
+                itemBuilder: (_) => _periodOptions.keys
+                    .map((label) => PopupMenuItem<String>(
+                          value: label,
+                          child: Row(
+                            children: [
+                              Icon(
+                                _selectedPeriod == label
+                                    ? Icons.check_circle
+                                    : Icons.radio_button_unchecked,
+                                size: 16,
+                                color: _selectedPeriod == label
+                                    ? const Color(0xFF0533F4)
+                                    : Colors.grey,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(label),
+                            ],
+                          ),
+                        ))
+                    .toList(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        _selectedPeriod,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 14),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
