@@ -1,9 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../firestore_collections.dart';
 import '../models/invoice_model.dart';
-import '../models/invoice_draft.dart';
 
-/// Real Firestore-backed service for /invoices and /invoice_drafts collections.
+/// Real Firestore-backed service for /invoices collection.
 ///
 /// All invoices are user-isolated via the [createdBy] field (indexed in Firestore).
 /// Soft-delete is enforced: documents are never hard-deleted; [isDeleted] = true instead.
@@ -15,9 +14,6 @@ class FirestoreInvoiceService {
 
   CollectionReference<Map<String, dynamic>> get _invoices =>
       _db.collection(FirestoreCollections.invoices);
-
-  CollectionReference<Map<String, dynamic>> get _drafts =>
-      _db.collection(FirestoreCollections.invoiceDrafts);
 
   // =========================================================================
   // INVOICE OPERATIONS
@@ -132,51 +128,6 @@ class FirestoreInvoiceService {
       update['submissionDate'] = Timestamp.fromDate(submissionDate);
     }
     await _invoices.doc(invoiceId).update(update);
-  }
-
-  // =========================================================================
-  // DRAFT OPERATIONS
-  // =========================================================================
-
-  /// Save (or overwrite) a draft. Returns the document ID.
-  /// Pass [draftId] to upsert an existing draft, omit to auto-generate.
-  Future<String> saveDraft(InvoiceDraft draft, String userId, {String? draftId}) async {
-    final now = FieldValue.serverTimestamp();
-    final data = _toFirestoreMap(draft.toJson())
-      ..['userId'] = userId
-      ..['updatedAt'] = now;
-
-    if (draftId != null && draftId.isNotEmpty) {
-      await _drafts.doc(draftId).set(data..['createdAt'] = now, SetOptions(merge: true));
-      return draftId;
-    } else {
-      final doc = _drafts.doc();
-      await doc.set(data..['createdAt'] = now);
-      return doc.id;
-    }
-  }
-
-  /// Fetch a draft by ID.
-  Future<InvoiceDraft?> getDraft(String draftId) async {
-    final doc = await _drafts.doc(draftId).get();
-    if (!doc.exists) return null;
-    return InvoiceDraft.fromJson(_fromFirestoreMap(doc.data()!));
-  }
-
-  /// All drafts for [userId], newest first.
-  Future<List<InvoiceDraft>> getDraftsByUser(String userId) async {
-    final snap = await _drafts
-        .where('userId', isEqualTo: userId)
-        .orderBy('updatedAt', descending: true)
-        .get();
-    return snap.docs
-        .map((d) => InvoiceDraft.fromJson(_fromFirestoreMap(d.data())))
-        .toList();
-  }
-
-  /// Delete a draft permanently.
-  Future<void> deleteDraft(String draftId) async {
-    await _drafts.doc(draftId).delete();
   }
 
   // =========================================================================

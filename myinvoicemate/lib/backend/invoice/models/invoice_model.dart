@@ -163,6 +163,8 @@ class PartyInfo {
   final String? phone; // Kept for backward compatibility
   final Address address;
   final String? contactPerson;
+  final String? msicCode; // Malaysia Standard Industrial Classification Code
+  final String? businessActivityDescription; // MSIC business activity description
 
   PartyInfo({
     required this.name,
@@ -175,6 +177,8 @@ class PartyInfo {
     this.phone,
     required this.address,
     this.contactPerson,
+    this.msicCode,
+    this.businessActivityDescription,
   });
 
   factory PartyInfo.fromJson(Map<String, dynamic> json) => _$PartyInfoFromJson(json);
@@ -191,6 +195,8 @@ class PartyInfo {
     String? phone,
     Address? address,
     String? contactPerson,
+    String? msicCode,
+    String? businessActivityDescription,
   }) {
     return PartyInfo(
       name: name ?? this.name,
@@ -203,6 +209,8 @@ class PartyInfo {
       phone: phone ?? this.phone,
       address: address ?? this.address,
       contactPerson: contactPerson ?? this.contactPerson,
+      msicCode: msicCode ?? this.msicCode,
+      businessActivityDescription: businessActivityDescription ?? this.businessActivityDescription,
     );
   }
 
@@ -283,6 +291,7 @@ class InvoiceLineItem {
   final double? taxAmount;
   final double totalAmount;
   final String? productCode;
+  final String? classification; // IRBM 3-digit classification code (e.g. '022')
   final TaxType taxType;
 
   InvoiceLineItem({
@@ -297,6 +306,7 @@ class InvoiceLineItem {
     this.taxAmount,
     required this.totalAmount,
     this.productCode,
+    this.classification,
     this.taxType = TaxType.none,
   });
 

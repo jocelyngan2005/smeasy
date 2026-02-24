@@ -114,6 +114,8 @@ PartyInfo _$PartyInfoFromJson(Map<String, dynamic> json) => PartyInfo(
   phone: json['phone'] as String?,
   address: Address.fromJson(json['address'] as Map<String, dynamic>),
   contactPerson: json['contactPerson'] as String?,
+  msicCode: json['msicCode'] as String?,
+  businessActivityDescription: json['businessActivityDescription'] as String?,
 );
 
 Map<String, dynamic> _$PartyInfoToJson(PartyInfo instance) => <String, dynamic>{
@@ -127,6 +129,8 @@ Map<String, dynamic> _$PartyInfoToJson(PartyInfo instance) => <String, dynamic>{
   'phone': instance.phone,
   'address': instance.address.toJson(),
   'contactPerson': instance.contactPerson,
+  'msicCode': instance.msicCode,
+  'businessActivityDescription': instance.businessActivityDescription,
 };
 
 Address _$AddressFromJson(Map<String, dynamic> json) => Address(
@@ -162,6 +166,7 @@ InvoiceLineItem _$InvoiceLineItemFromJson(Map<String, dynamic> json) =>
       taxAmount: (json['taxAmount'] as num?)?.toDouble(),
       totalAmount: (json['totalAmount'] as num).toDouble(),
       productCode: json['productCode'] as String?,
+      classification: json['classification'] as String?,
       taxType:
           $enumDecodeNullable(_$TaxTypeEnumMap, json['taxType']) ??
           TaxType.none,
@@ -180,6 +185,7 @@ Map<String, dynamic> _$InvoiceLineItemToJson(InvoiceLineItem instance) =>
       'taxAmount': instance.taxAmount,
       'totalAmount': instance.totalAmount,
       'productCode': instance.productCode,
+      'classification': instance.classification,
       'taxType': _$TaxTypeEnumMap[instance.taxType]!,
     };
 

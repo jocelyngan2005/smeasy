@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../../utils/digital_signature_service.dart';
 import '../../firestore_collections.dart';
 import '../models/user_model.dart';
 
@@ -103,6 +104,13 @@ class AuthService {
 
     await _users.doc(uid).set(model.toFirestore());
     _currentUser = model;
+
+    // ── Step 1: Generate RSA keypair (one-time) ──────────────────────────────
+    // Runs in background; errors are non-fatal so sign-up still succeeds.
+    DigitalSignatureService.generateAndStoreKeyPair(uid).catchError(
+      (e) => {},
+    );
+
     return model;
   }
 

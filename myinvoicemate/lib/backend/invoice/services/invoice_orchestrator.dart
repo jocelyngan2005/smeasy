@@ -38,16 +38,9 @@ class InvoiceGenerationOrchestrator {
         vendorContext: vendorContext,
       );
 
-      // Step 2: Save draft to Firestore if requested
-      String? draftId;
-      if (saveDraft && _firestoreService != null) {
-        try {
-          draftId = await _firestoreService.saveDraft(draft, userId);
-        } catch (e) {
-          // Firestore not available, continue without saving
-          print('Warning: Could not save draft to Firestore: $e');
-        }
-      }
+      // Drafts are saved as invoices (complianceStatus: draft) during finalization.
+      // Intermediate draft objects are kept in-memory only.
+      const String? draftId = null;
 
       return InvoiceGenerationResult(
         draft: draft,
@@ -79,15 +72,8 @@ class InvoiceGenerationOrchestrator {
         additionalInput: additionalInput,
       );
 
-      // Save refined draft
-      String? draftId;
-      if (_firestoreService != null) {
-        try {
-          draftId = await _firestoreService.saveDraft(refinedDraft, userId);
-        } catch (e) {
-          print('Warning: Could not save draft to Firestore: $e');
-        }
-      }
+      // Drafts are kept in-memory; saved to Firestore only on finalization.
+      const String? draftId = null;
 
       return InvoiceGenerationResult(
         draft: refinedDraft,
@@ -120,16 +106,8 @@ class InvoiceGenerationOrchestrator {
         imageFile: imageFile,
       );
 
-      // Save draft if requested
-      String? draftId;
-      if (saveDraft && _firestoreService != null) {
-        try {
-          draftId = await _firestoreService.saveDraft(draft, userId);
-        } catch (e) {
-          // Firestore not available, continue without saving
-          print('Warning: Could not save draft to Firestore: $e');
-        }
-      }
+      // Drafts are kept in-memory; saved to Firestore only on finalization.
+      const String? draftId = null;
 
       return InvoiceGenerationResult(
         draft: draft,
@@ -162,15 +140,8 @@ class InvoiceGenerationOrchestrator {
         mimeType: mimeType,
       );
 
-      // Save draft if requested
-      String? draftId;
-      if (saveDraft && _firestoreService != null) {
-        try {
-          draftId = await _firestoreService.saveDraft(draft, userId);
-        } catch (e) {
-          print('Warning: Could not save draft to Firestore: $e');
-        }
-      }
+      // Drafts are kept in-memory; saved to Firestore only on finalization.
+      const String? draftId = null;
 
       return InvoiceGenerationResult(
         draft: draft,
@@ -354,15 +325,10 @@ class InvoiceGenerationOrchestrator {
     return message;
   }
 
-  /// Get draft by ID
+  /// Get draft by ID — drafts are now stored as invoices with complianceStatus=draft.
+  /// Use [getInvoice] instead.
   Future<InvoiceDraft?> getDraft(String draftId) async {
-    if (_firestoreService == null) return null;
-    try {
-      return await _firestoreService.getDraft(draftId);
-    } catch (e) {
-      print('Warning: Could not get draft from Firestore: $e');
-      return null;
-    }
+    return null;
   }
 
   /// Get invoice by ID
@@ -376,15 +342,10 @@ class InvoiceGenerationOrchestrator {
     }
   }
 
-  /// List user's drafts
+  /// List user's drafts — drafts are now stored as invoices with complianceStatus=draft.
+  /// Use [listInvoices] and filter by status='draft' instead.
   Future<List<InvoiceDraft>> listDrafts(String userId) async {
-    if (_firestoreService == null) return [];
-    try {
-      return await _firestoreService.getDraftsByUser(userId);
-    } catch (e) {
-      print('Warning: Could not list drafts from Firestore: $e');
-      return [];
-    }
+    return [];
   }
 
   /// List user's invoices

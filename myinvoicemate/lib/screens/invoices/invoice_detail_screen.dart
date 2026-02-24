@@ -6,6 +6,7 @@ import '../../backend/invoice/services/invoice_service.dart';
 import '../../backend/invoice/services/gemini_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
+import '../../utils/invoice_pdf_generator.dart';
 import 'invoice_create_screen.dart';
 
 class InvoiceDetailScreen extends StatefulWidget {
@@ -259,9 +260,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           if (!_canEdit(widget.invoice.status))
             IconButton(
               icon: const Icon(Icons.share),
-              onPressed: () {
-                Helpers.showInfoSnackbar(context, 'Share feature coming soon');
-              },
+              tooltip: 'Preview / Share PDF',
+              onPressed: () => InvoicePdfGenerator.previewPdf(widget.invoice),
             ),
         ],
       ),
@@ -415,6 +415,10 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                 _buildInfoCard([
                   _buildInfoRow('Business', widget.invoice.sellerName),
                   _buildInfoRow('TIN', widget.invoice.sellerTin),
+                  if (widget.invoice.sellerMsicCode != null)
+                    _buildInfoRow('MSIC Code', widget.invoice.sellerMsicCode!),
+                  if (widget.invoice.sellerBusinessActivityDescription != null)
+                    _buildInfoRow('Business Activity', widget.invoice.sellerBusinessActivityDescription!),
                 ]),
                 const SizedBox(height: 16),
 
@@ -575,9 +579,22 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                               children: [
                                 Expanded(
                                   flex: 3,
-                                  child: Text(
-                                    item.description,
-                                    style: const TextStyle(fontSize: 12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.description,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      if (item.classification != null)
+                                        Text(
+                                          'Class: ${item.classification}',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                                 SizedBox(

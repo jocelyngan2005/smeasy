@@ -70,7 +70,6 @@ function withUid(data) {
 const COLLECTIONS = {
   users: 'users',
   invoices: 'invoices',
-  invoiceDrafts: 'invoice_drafts',
   customers: 'customers',
   complianceAlerts: 'compliance_alerts',
   complianceQuestions: 'compliance_questions',
@@ -102,6 +101,8 @@ const VENDOR = {
     postalCode: '50450',
     country: 'MY',
   },
+  msicCode: '620',
+  businessActivityDescription: 'Information Technology Services',
 };
 
 // ── USERS ──────────────────────────────────────────────────────────────────
@@ -135,7 +136,7 @@ const USERS = [
 // ── CUSTOMERS ───────────────────────────────────────────────────────────────
 const CUSTOMERS = [
   {
-    id: 'cust-001',
+    id: 'CUST20260105001',
     name: 'ABC Trading Sdn Bhd',
     tin: 'C9988776655',
     registrationNumber: '201901234567',
@@ -146,7 +147,7 @@ const CUSTOMERS = [
     contactPerson: 'Lim Kah Wai',
     addresses: [
       {
-        id: 'cust-001_addr_1',
+        id: 'CUST20260105001_addr_1',
         line1: 'No 9, Jalan Industri 3',
         line2: 'Taman Industri PJ',
         line3: null,
@@ -168,7 +169,7 @@ const CUSTOMERS = [
     notes: 'Long-term client. Net 30 payment terms.',
   },
   {
-    id: 'cust-002',
+    id: 'CUST20260120001',
     name: 'Mega Retail Bhd',
     tin: 'C1122334455',
     registrationNumber: '200901122334',
@@ -179,7 +180,7 @@ const CUSTOMERS = [
     contactPerson: 'Siti Noor',
     addresses: [
       {
-        id: 'cust-002_addr_1',
+        id: 'CUST20260120001_addr_1',
         line1: 'Lot 45, Wisma Mega',
         line2: 'Jalan Raja Laut',
         line3: null,
@@ -201,7 +202,7 @@ const CUSTOMERS = [
     notes: null,
   },
   {
-    id: 'cust-003',
+    id: 'CUST20260205001',
     name: 'Primavera Catering & Events',
     tin: 'EI00000000011',
     registrationNumber: null,
@@ -212,7 +213,7 @@ const CUSTOMERS = [
     contactPerson: 'Nora Binti Aziz',
     addresses: [
       {
-        id: 'cust-003_addr_1',
+        id: 'CUST20260205001_addr_1',
         line1: 'No 3, Lorong Damai 7',
         line2: null,
         line3: null,
@@ -234,7 +235,7 @@ const CUSTOMERS = [
     notes: 'Individual business owner. No SST registration.',
   },
   {
-    id: 'cust-004',
+    id: 'CUST20260115001',
     name: 'Greentech Solutions Sdn Bhd',
     tin: 'C5566778899',
     registrationNumber: '201801003344',
@@ -245,7 +246,7 @@ const CUSTOMERS = [
     contactPerson: 'Raj Kumar',
     addresses: [
       {
-        id: 'cust-004_addr_1',
+        id: 'CUST20260115001_addr_1',
         line1: 'Suite 12-05, Menara Greentech',
         line2: 'Persiaran Multimedia',
         line3: null,
@@ -267,7 +268,7 @@ const CUSTOMERS = [
     notes: 'Requires purchase order reference on all invoices.',
   },
   {
-    id: 'cust-005',
+    id: 'CUST20260218001',
     name: 'Northern Star Enterprise',
     tin: 'C3344556677',
     registrationNumber: '202201556677',
@@ -278,7 +279,7 @@ const CUSTOMERS = [
     contactPerson: 'Chong Wei Liang',
     addresses: [
       {
-        id: 'cust-005_addr_1',
+        id: 'CUST20260218001_addr_1',
         line1: 'No 88, Jalan Perak',
         line2: 'Georgetown',
         line3: null,
@@ -302,7 +303,7 @@ const CUSTOMERS = [
 ];
 
 // ── Helper to build a line item ─────────────────────────────────────────────
-function lineItem(id, desc, qty, unitPrice, taxRate, taxType, productCode) {
+function lineItem(id, desc, qty, unitPrice, taxRate, taxType, productCode, classification) {
   const subtotal = qty * unitPrice;
   const taxAmount = taxRate ? subtotal * (taxRate / 100) : 0;
   const totalAmount = subtotal + taxAmount;
@@ -318,6 +319,7 @@ function lineItem(id, desc, qty, unitPrice, taxRate, taxType, productCode) {
     taxAmount,
     totalAmount,
     productCode: productCode || null,
+    classification: classification || '022', // IRBM 3-digit classification code
     taxType,
   };
 }
@@ -338,18 +340,18 @@ const buyer = (c) => ({
 });
 
 const INVOICES = [
-  // ── INV-2026-001: Accepted (submitted & approved by MyInvois, > RM10k) ────
+  // ── INV20260115001: Accepted (submitted & approved by MyInvois, > RM10k) ────
   (() => {
     const items = [
-      lineItem('li-001-1', 'Enterprise Software Subscription (Annual)', 1, 10000, 6, 'sst_6', 'SUB-ENT-01'),
-      lineItem('li-001-2', 'Implementation & Setup', 1, 3000, 6, 'sst_6', 'SVC-IMPL-01'),
-      lineItem('li-001-3', 'User Training (3 Sessions)', 3, 500, 6, 'sst_6', 'SVC-TRN-01'),
+      lineItem('INV20260115001-LI-1', 'Enterprise Software Subscription (Annual)', 1, 10000, 6, 'sst_6', 'SUB-ENT-01', '022'),
+      lineItem('INV20260115001-LI-2', 'Implementation & Setup', 1, 3000, 6, 'sst_6', 'SVC-IMPL-01', '008'),
+      lineItem('INV20260115001-LI-3', 'User Training (3 Sessions)', 3, 500, 6, 'sst_6', 'SVC-TRN-01', '013'),
     ];
     const subtotal = items.reduce((s, i) => s + i.subtotal, 0);
     const taxAmount = items.reduce((s, i) => s + i.taxAmount, 0);
     return {
-      id: 'INV-2026-001',
-      invoiceNumber: 'INV-2026-001',
+      id: 'INV20260115001',
+      invoiceNumber: 'INV20260115001',
       type: 'invoice',
       issueDate: TS('2026-01-15T09:00:00'),
       dueDate: TS('2026-02-14T09:00:00'),
@@ -380,18 +382,18 @@ const INVOICES = [
     };
   })(),
 
-  // ── INV-2026-002: Validated (ready to submit to MyInvois, > RM10k) ────────
+  // ── INV20260201001: Validated (ready to submit to MyInvois, > RM10k) ────────
   (() => {
     const items = [
-      lineItem('li-002-1', 'Cloud Infrastructure Setup', 1, 8000, 6, 'sst_6', 'SVC-CLOUD-01'),
-      lineItem('li-002-2', 'Monthly Managed Services (Jan)', 1, 2000, 6, 'sst_6', 'SVC-MGMT-01'),
-      lineItem('li-002-3', 'SSL Certificate (1 Year)', 2, 300, 6, 'sst_6', 'PROD-SSL-01'),
+      lineItem('INV20260201001-LI-1', 'Cloud Infrastructure Setup', 1, 8000, 6, 'sst_6', 'SVC-CLOUD-01', '008'),
+      lineItem('INV20260201001-LI-2', 'Monthly Managed Services (Jan)', 1, 2000, 6, 'sst_6', 'SVC-MGMT-01', '014'),
+      lineItem('INV20260201001-LI-3', 'SSL Certificate (1 Year)', 2, 300, 6, 'sst_6', 'PROD-SSL-01', '022'),
     ];
     const subtotal = items.reduce((s, i) => s + i.subtotal, 0);
     const taxAmount = items.reduce((s, i) => s + i.taxAmount, 0);
     return {
-      id: 'INV-2026-002',
-      invoiceNumber: 'INV-2026-002',
+      id: 'INV20260201001',
+      invoiceNumber: 'INV20260201001',
       type: 'invoice',
       issueDate: TS('2026-02-01T10:00:00'),
       dueDate: TS('2026-03-03T10:00:00'),
@@ -422,24 +424,44 @@ const INVOICES = [
     };
   })(),
 
-  // ── INV-2026-003: Draft (< RM10k, below submission threshold) ─────────────
+  // ── INV20260210001: Draft (< RM10k, below submission threshold) ─────────────
   (() => {
     const items = [
-      lineItem('li-003-1', 'Website Maintenance (Feb 2026)', 1, 1500, null, 'none', 'SVC-WEB-01'),
-      lineItem('li-003-2', 'Content Update Service', 5, 300, null, 'none', 'SVC-CONT-01'),
-      lineItem('li-003-3', 'SEO Audit Report', 1, 750, null, 'none', 'SVC-SEO-01'),
+      lineItem('INV20260210001-LI-1', 'Website Maintenance (Feb 2026) [Ref: RCP-20260210-001]', 1, 1500, null, 'none', 'SVC-WEB-01', '014'),
+      lineItem('INV20260210001-LI-2', 'Content Update Service (5 sessions) [Ref: RCP-20260210-002 to RCP-20260210-006]', 5, 300, null, 'none', 'SVC-CONT-01', '008'),
+      lineItem('INV20260210001-LI-3', 'SEO Audit Report [Ref: RCP-20260210-007]', 1, 750, null, 'none', 'SVC-SEO-01', '008'),
     ];
     const subtotal = items.reduce((s, i) => s + i.subtotal, 0);
     const taxAmount = 0;
     return {
-      id: 'INV-2026-003',
-      invoiceNumber: 'INV-2026-003',
+      id: 'INV20260210001',
+      invoiceNumber: 'INV20260210001',
       type: 'invoice',
       issueDate: TS('2026-02-10T14:00:00'),
       dueDate: TS('2026-02-25T14:00:00'),
       currency: 'MYR',
       vendor: VENDOR,
-      buyer: buyer(CUSTOMERS[2]),
+      // Consolidated e-Invoice: mandatory LHDN placeholder values (sub-RM10k, supplier-issued)
+      buyer: {
+        name: 'General Public',
+        tin: 'EI00000000010',
+        registrationNumber: 'NA',
+        identificationNumber: 'NA',
+        contactNumber: 'NA',
+        sstNumber: 'NA',
+        email: null,
+        phone: 'NA',
+        contactPerson: null,
+        address: {
+          line1: 'NA',
+          line2: null,
+          line3: null,
+          city: 'NA',
+          state: 'NA',
+          postalCode: 'NA',
+          country: 'MY',
+        },
+      },
       lineItems: items,
       subtotal,
       taxAmount,
@@ -454,7 +476,7 @@ const INVOICES = [
       isWithinRelaxationPeriod: true,
       requiresSubmission: false,
       shippingRecipient: null,
-      notes: 'Below RM10k threshold. Relaxation period applies.',
+      notes: 'Consolidated e-Invoice (below RM10k threshold). Buyer fields set to LHDN General Public placeholder (EI00000000010). Relaxation period applies.',
       metadata: { aiConfidence: 0.91, originalInput: 'website maintenance and SEO for Primavera' },
       createdAt: TS('2026-02-10T14:00:00'),
       updatedAt: TS('2026-02-10T14:00:00'),
@@ -464,18 +486,18 @@ const INVOICES = [
     };
   })(),
 
-  // ── INV-2026-004: Submitted (awaiting MyInvois response, > RM10k) ─────────
+  // ── INV20260128001: Submitted (awaiting MyInvois response, > RM10k) ─────────
   (() => {
     const items = [
-      lineItem('li-004-1', 'DevOps Consulting (Jan 2026)', 10, 900, 6, 'sst_6', 'SVC-DEV-01'),
-      lineItem('li-004-2', 'CI/CD Pipeline Setup', 1, 2500, 6, 'sst_6', 'SVC-CICD-01'),
-      lineItem('li-004-3', 'Server Hardening Audit', 1, 1500, 6, 'sst_6', 'SVC-SEC-01'),
+      lineItem('INV20260128001-LI-1', 'DevOps Consulting (Jan 2026)', 10, 900, 6, 'sst_6', 'SVC-DEV-01', '008'),
+      lineItem('INV20260128001-LI-2', 'CI/CD Pipeline Setup', 1, 2500, 6, 'sst_6', 'SVC-CICD-01', '022'),
+      lineItem('INV20260128001-LI-3', 'Server Hardening Audit', 1, 1500, 6, 'sst_6', 'SVC-SEC-01', '008'),
     ];
     const subtotal = items.reduce((s, i) => s + i.subtotal, 0);
     const taxAmount = items.reduce((s, i) => s + i.taxAmount, 0);
     return {
-      id: 'INV-2026-004',
-      invoiceNumber: 'INV-2026-004',
+      id: 'INV20260128001',
+      invoiceNumber: 'INV20260128001',
       type: 'invoice',
       issueDate: TS('2026-01-28T08:30:00'),
       dueDate: TS('2026-02-27T08:30:00'),
@@ -506,18 +528,18 @@ const INVOICES = [
     };
   })(),
 
-  // ── INV-2026-005: Rejected (MyInvois rejected due to TIN mismatch) ─────────
+  // ── INV20260205001: Rejected (MyInvois rejected due to TIN mismatch) ─────────
   (() => {
     const items = [
-      lineItem('li-005-1', 'Annual Support Contract', 1, 6000, 6, 'sst_6', 'SVC-SUP-01'),
-      lineItem('li-005-2', 'Disaster Recovery Planning', 1, 4500, 6, 'sst_6', 'SVC-DR-01'),
-      lineItem('li-005-3', 'Backup Solution Licence', 2, 750, 6, 'sst_6', 'PROD-BCK-01'),
+      lineItem('INV20260205001-LI-1', 'Annual Support Contract', 1, 6000, 6, 'sst_6', 'SVC-SUP-01', '014'),
+      lineItem('INV20260205001-LI-2', 'Disaster Recovery Planning', 1, 4500, 6, 'sst_6', 'SVC-DR-01', '008'),
+      lineItem('INV20260205001-LI-3', 'Backup Solution Licence', 2, 750, 6, 'sst_6', 'PROD-BCK-01', '022'),
     ];
     const subtotal = items.reduce((s, i) => s + i.subtotal, 0);
     const taxAmount = items.reduce((s, i) => s + i.taxAmount, 0);
     return {
-      id: 'INV-2026-005',
-      invoiceNumber: 'INV-2026-005',
+      id: 'INV20260205001',
+      invoiceNumber: 'INV20260205001',
       type: 'invoice',
       issueDate: TS('2026-02-05T13:00:00'),
       dueDate: TS('2026-03-07T13:00:00'),
@@ -552,105 +574,31 @@ const INVOICES = [
   })(),
 ];
 
-// ── INVOICE DRAFTS (2) ──────────────────────────────────────────────────────
-const INVOICE_DRAFTS = [
-  {
-    id: 'draft-001',
-    invoiceNumber: null,
-    type: 'invoice',
-    issueDate: null,
-    dueDate: null,
-    vendor: {
-      name: 'SME Easy Sdn Bhd',
-      tin: 'C1234567890',
-    },
-    buyer: {
-      name: 'Northern Star Enterprise',
-      tin: null,
-      contactNumber: '+60454445566',
-    },
-    shippingRecipient: null,
-    lineItems: [
-      {
-        id: 'dli-001-1',
-        description: 'Web Application Development',
-        quantity: 1,
-        unit: 'project',
-        unitPrice: 15000,
-        discountAmount: null,
-        taxRate: 6,
-        productCode: null,
-        taxType: 'sst_6',
-      },
-    ],
-    subtotal: 15000,
-    taxAmount: 900,
-    totalAmount: 15900,
-    originalInput: 'invoice for Northern Star, web app development project fifteen thousand, six percent SST',
-    confidenceScore: 0.78,
-    extractedEntities: ['Northern Star Enterprise', 'web application development', '15000', 'SST 6%'],
-    rawAIResponse: { model: 'gemini-1.5-flash', tokensUsed: 512 },
-    source: 'voice',
-    missingFields: ['buyer.tin', 'buyer.address', 'invoiceNumber', 'issueDate'],
-    warnings: ['Buyer TIN not found in input. Please verify.'],
-    isReadyForFinalization: false,
-    userId: 'test-user-001',
-    createdAt: TS('2026-02-20T16:00:00'),
-    updatedAt: TS('2026-02-20T16:00:00'),
-  },
-  {
-    id: 'draft-002',
-    invoiceNumber: null,
-    type: 'invoice',
-    issueDate: TS('2026-02-22T00:00:00'),
-    dueDate: null,
-    vendor: null,
-    buyer: {
-      name: 'ABC Trading Sdn Bhd',
-      tin: 'C9988776655',
-      contactNumber: '+60198887766',
-    },
-    shippingRecipient: null,
-    lineItems: [],
-    subtotal: null,
-    taxAmount: null,
-    totalAmount: null,
-    originalInput: null,
-    confidenceScore: 0.45,
-    extractedEntities: [],
-    rawAIResponse: null,
-    source: 'receipt_scan',
-    missingFields: ['vendor', 'lineItems', 'totalAmount'],
-    warnings: ['Receipt scan quality is low. Please retake the photo.'],
-    isReadyForFinalization: false,
-    userId: 'test-user-001',
-    createdAt: TS('2026-02-22T10:30:00'),
-    updatedAt: TS('2026-02-22T10:30:00'),
-  },
-];
-
 // ── COMPLIANCE ALERTS ───────────────────────────────────────────────────────
 const COMPLIANCE_ALERTS = [
   {
     id: 'alert-001',
-    title: 'INV-2026-005 Rejected — Action Required',
-    message: 'MyInvois rejected INV-2026-005 due to buyer TIN mismatch (Error E-INV-4002). Update buyer TIN and resubmit within 72 hours to avoid penalties.',
+    userId: 'test-user-001',
+    title: 'INV20260205001 Rejected — Action Required',
+    message: 'MyInvois rejected INV20260205001 due to buyer TIN mismatch (Error E-INV-4002). Update buyer TIN and resubmit within 72 hours to avoid penalties.',
     type: 'error',
     deadline: TS('2026-02-08T14:00:00'),
     isRead: false,
-    relatedInvoiceId: 'INV-2026-005',
+    relatedInvoiceId: 'INV20260205001',
   },
   {
     id: 'alert-002',
-    title: 'INV-2026-002 Awaiting Validation',
-    message: 'Invoice INV-2026-002 (RM12,720) has been submitted to MyInvois and is awaiting validation. Reference: MYINVOIS-2026-PEND-002.',
+    userId: 'test-user-001',
+    title: 'INV20260201001 Awaiting Validation',
+    message: 'Invoice INV20260201001 (RM12,720) has been submitted to MyInvois and is awaiting validation. Reference: MYINVOIS-2026-PEND-002.',
     type: 'warning',
     deadline: TS('2026-02-04T10:00:00'),
     isRead: false,
-    relatedInvoiceId: 'INV-2026-002',
+    relatedInvoiceId: 'INV20260201001',
   },
   {
     id: 'alert-003',
+    userId: 'test-user-001',
     title: 'Monthly Compliance Report Due',
     message: 'Your February 2026 consolidated invoice report for transactions below RM10,000 is due by 28 February 2026. Please review and submit.',
     type: 'deadline',
@@ -660,6 +608,7 @@ const COMPLIANCE_ALERTS = [
   },
   {
     id: 'alert-004',
+    userId: 'test-user-001',
     title: 'SST Filing Reminder — Q1 2026',
     message: 'Your Q1 2026 SST return (January–March) is due on 30 April 2026. Ensure all invoices are reconciled.',
     type: 'info',
@@ -816,7 +765,7 @@ const ANALYTICS_CACHE = [
       'Primavera Catering & Events': 4770.0,
     },
     complianceScore: 72.0,
-    updatedAt: TS('2026-02-22T00:00:00'),
+    lastUpdated: TS('2026-02-22T00:00:00'),
   },
 ];
 
@@ -961,7 +910,6 @@ async function main() {
   await seedCollection(COLLECTIONS.users, withUid(USERS));
   await seedCollection(COLLECTIONS.customers, withUid(CUSTOMERS));
   await seedCollection(COLLECTIONS.invoices, withUid(INVOICES));
-  await seedCollection(COLLECTIONS.invoiceDrafts, withUid(INVOICE_DRAFTS));
   await seedCollection(COLLECTIONS.complianceAlerts, withUid(COMPLIANCE_ALERTS));
   await seedCollection(COLLECTIONS.complianceQuestions, withUid(COMPLIANCE_QUESTIONS));
   await seedCollection(COLLECTIONS.supportLocations, withUid(SUPPORT_LOCATIONS));
@@ -972,7 +920,6 @@ async function main() {
   console.log(`    users               : ${USERS.length}`);
   console.log(`    customers           : ${CUSTOMERS.length}`);
   console.log(`    invoices            : ${INVOICES.length}`);
-  console.log(`    invoice_drafts      : ${INVOICE_DRAFTS.length}`);
   console.log(`    compliance_alerts   : ${COMPLIANCE_ALERTS.length}`);
   console.log(`    compliance_questions: ${COMPLIANCE_QUESTIONS.length}`);
   console.log(`    support_locations   : ${SUPPORT_LOCATIONS.length}`);

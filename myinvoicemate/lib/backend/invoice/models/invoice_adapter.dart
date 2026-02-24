@@ -212,12 +212,12 @@ extension InvoiceCompat on Invoice {
   String get sellerTin => vendor.tin ?? tin ?? '';
   String? get sellerEmail => vendor.email;
   String? get sellerPhone => vendor.phone;
-  String get sellerAddress => 
-      '${vendor.address.line1}${vendor.address.line2 != null ? ', ${vendor.address.line2}' : ''}';
-  
-  // Buyer getters for backwards compatibility
-  String get buyerId => buyer.registrationNumber ?? '';
+  String? get sellerMsicCode => vendor.msicCode;
+  String? get sellerBusinessActivityDescription => vendor.businessActivityDescription;
+  String get sellerAddress =>
+      '${vendor.address.line1}${vendor.address.line2 != null ? ', ${vendor.address.line2}' : ''}, ${vendor.address.city}, ${vendor.address.state} ${vendor.address.postalCode}';
   String get buyerName => buyer.name;
+  String get buyerId => buyer.registrationNumber ?? buyer.name;
   String get buyerTin => buyer.tin ?? '';
   String? get buyerEmail => buyer.email;
   String? get buyerPhone => buyer.phone;
