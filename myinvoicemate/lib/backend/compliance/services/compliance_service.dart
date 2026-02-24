@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../firestore_collections.dart';
 import '../models/compliance_model.dart';
 
+// ignore_for_file: avoid_catches_without_on_clauses
+
 /// Firestore-backed compliance service.
 ///
 /// /compliance_alerts/{alertId} — per-user alerts with deadlines.
@@ -85,11 +87,49 @@ class ComplianceService {
   }
 
   // ---------------------------------------------------------------------------
-  // Compliance alerts
+  // Compliance alerts — real-time stream
   // ---------------------------------------------------------------------------
 
-  /// All unread + upcoming compliance alerts for [userId],
-  /// ordered by deadline ascending.
+  /// Live stream of all alerts for [userId], sorted client-side:
+  /// unread critical first, then by deadline ascending.
+  Stream<List<ComplianceAlert>> watchAlerts(String userId) {
+    return _alerts
+        .where('userId', isEqualTo: userId)
+        .orderBy('deadline')
+        .snapshots()
+        .map((snap) {
+      final alerts = snap.docs
+          .map((d) {
+            final data = _fromFirestore(d.data());
+            return ComplianceAlert.fromJson(data..['id'] = d.id);
+          })
+          .toList();
+
+      // Sort: unread first, then by severity weight, then by deadline.
+      alerts.sort((a, b) {
+        if (a.isRead != b.isRead) return a.isRead ? 1 : -1;
+        final sw = _severityWeight(a.severity) - _severityWeight(b.severity);
+        if (sw != 0) return sw;
+        return a.deadline.compareTo(b.deadline);
+      });
+      return alerts;
+    });
+  }
+
+  /// Live count of unread alerts (for badge display).
+  Stream<int> watchUnreadCount(String userId) {
+    return _alerts
+        .where('userId', isEqualTo: userId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .map((s) => s.size);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compliance alerts — one-shot reads
+  // ---------------------------------------------------------------------------
+
+  /// All compliance alerts for [userId], ordered by deadline ascending.
   Future<List<ComplianceAlert>> getComplianceAlerts(String userId) async {
     final snap = await _alerts
         .where('userId', isEqualTo: userId)
@@ -101,7 +141,49 @@ class ComplianceService {
     }).toList();
   }
 
-  /// Save a new compliance alert and return its ID.
+  /// Fetch IDs of all existing alerts for [userId] (for deduplication).
+  Future<Set<String>> getExistingAlertIds(String userId) async {
+    final snap = await _alerts
+        .where('userId', isEqualTo: userId)
+        .get();
+    return snap.docs.map((d) => d.id).toSet();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compliance alerts — writes
+  // ---------------------------------------------------------------------------
+
+  /// Upsert a compliance alert with a deterministic [alertId].
+  /// Skips write when [alertId] is already in [existingIds].
+  Future<void> upsertAlert({
+    required String alertId,
+    required String userId,
+    required ComplianceAlert alert,
+    required Set<String> existingIds,
+    WriteBatch? batch,
+  }) async {
+    if (existingIds.contains(alertId)) return;
+    final data = {
+      'userId': userId,
+      'title': alert.title,
+      'message': alert.message,
+      'type': alert.type,
+      'category': alert.category.name,
+      'severity': alert.severity.name,
+      'deadline': Timestamp.fromDate(alert.deadline),
+      'isRead': false,
+      if (alert.relatedInvoiceId != null) 'relatedInvoiceId': alert.relatedInvoiceId,
+      if (alert.metadata != null) 'metadata': alert.metadata,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    if (batch != null) {
+      batch.set(_alerts.doc(alertId), data);
+    } else {
+      await _alerts.doc(alertId).set(data);
+    }
+  }
+
+  /// Save a new compliance alert and return its Firestore document ID.
   Future<String> createAlert(ComplianceAlert alert, String userId) async {
     final doc = _alerts.doc();
     await doc.set({
@@ -109,10 +191,12 @@ class ComplianceService {
       'title': alert.title,
       'message': alert.message,
       'type': alert.type,
+      'category': alert.category.name,
+      'severity': alert.severity.name,
       'deadline': Timestamp.fromDate(alert.deadline),
       'isRead': alert.isRead,
-      if (alert.relatedInvoiceId != null)
-        'relatedInvoiceId': alert.relatedInvoiceId,
+      if (alert.relatedInvoiceId != null) 'relatedInvoiceId': alert.relatedInvoiceId,
+      if (alert.metadata != null) 'metadata': alert.metadata,
       'createdAt': FieldValue.serverTimestamp(),
     });
     return doc.id;
@@ -120,15 +204,54 @@ class ComplianceService {
 
   /// Mark a single alert as read.
   Future<void> markAlertRead(String alertId) async {
-    await _alerts.doc(alertId).update({'isRead': true});
+    await _alerts.doc(alertId).update({'isRead': true, 'updatedAt': FieldValue.serverTimestamp()});
   }
 
-  /// Delete a compliance alert.
+  /// Mark ALL alerts for [userId] as read (batch).
+  Future<void> markAllRead(String userId) async {
+    final snap = await _alerts
+        .where('userId', isEqualTo: userId)
+        .where('isRead', isEqualTo: false)
+        .get();
+    if (snap.docs.isEmpty) return;
+    final batch = _db.batch();
+    for (final doc in snap.docs) {
+      batch.update(doc.reference, {'isRead': true});
+    }
+    await batch.commit();
+  }
+
+  /// Delete a single compliance alert.
   Future<void> deleteAlert(String alertId) async {
     await _alerts.doc(alertId).delete();
   }
 
-  /// Count of unread alerts for [userId] (useful for badge display).
+  /// Delete all READ alerts for [userId] (batch).
+  Future<void> clearReadAlerts(String userId) async {
+    final snap = await _alerts
+        .where('userId', isEqualTo: userId)
+        .where('isRead', isEqualTo: true)
+        .get();
+    if (snap.docs.isEmpty) return;
+    final batch = _db.batch();
+    for (final doc in snap.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
+  /// Delete ALL alerts for [userId] (batch).
+  Future<void> clearAllAlerts(String userId) async {
+    final snap = await _alerts.where('userId', isEqualTo: userId).get();
+    if (snap.docs.isEmpty) return;
+    final batch = _db.batch();
+    for (final doc in snap.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
+  /// Count of unread alerts for [userId] (useful for badge display, one-shot).
   Future<int> getUnreadAlertCount(String userId) async {
     final snap = await _alerts
         .where('userId', isEqualTo: userId)
@@ -159,6 +282,19 @@ class ComplianceService {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  static int _severityWeight(AlertSeverity s) {
+    switch (s) {
+      case AlertSeverity.critical:
+        return 0;
+      case AlertSeverity.high:
+        return 1;
+      case AlertSeverity.medium:
+        return 2;
+      case AlertSeverity.low:
+        return 3;
+    }
+  }
 
   static Map<String, dynamic> _fromFirestore(Map<String, dynamic> data) {
     return data.map((key, value) {
