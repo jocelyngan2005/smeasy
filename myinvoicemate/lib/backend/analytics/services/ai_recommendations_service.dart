@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../../firestore_collections.dart';
 import '../models/analytics_model.dart';
 
@@ -18,6 +19,10 @@ class AIRecommendationsService {
 
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
+  
+  // Gemini AI API configuration
+  static const String _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
+  static const String _geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
 
   // ---------------------------------------------------------------------------
   // AI Recommendations
@@ -48,12 +53,12 @@ class AIRecommendationsService {
         return recommendations;
       } else {
         print('⚠️ Cloud Function returned error: ${result['error']}');
-        return await _getCachedRecommendations(userId);
+        return await _getGeminiRecommendations(userId);
       }
     } catch (e) {
       print('❌ Error generating AI recommendations: $e');
-      // Fallback to cached recommendations
-      return await _getCachedRecommendations(userId);
+      // Fallback to direct Gemini AI
+      return await _getGeminiRecommendations(userId);
     }
   }
 
@@ -72,11 +77,11 @@ class AIRecommendationsService {
         print('📦 Retrieved ${recommendations.length} cached recommendations');
         return recommendations;
       } else {
-        return _getFallbackRecommendations();
+        return await _getGeminiRecommendations();
       }
     } catch (e) {
       print('Error getting cached recommendations: $e');
-      return _getFallbackRecommendations();
+      return await _getGeminiRecommendations();
     }
   }
 
@@ -352,7 +357,7 @@ Missing Buyer TIN: $missingTIN
           .get();
 
       if (!doc.exists) {
-        return _getFallbackRecommendations();
+        return await _getGeminiRecommendations(userId);
       }
 
       final data = doc.data()!;
@@ -361,7 +366,7 @@ Missing Buyer TIN: $missingTIN
       // Check if cache is stale (older than 1 hour)
       if (lastUpdated != null && 
           DateTime.now().difference(lastUpdated).inHours >= 1) {
-        return _getFallbackRecommendations();
+        return await _getGeminiRecommendations(userId);
       }
 
       final recommendations = (data['recommendations'] as List?)
@@ -370,14 +375,151 @@ Missing Buyer TIN: $missingTIN
 
       return recommendations.isNotEmpty 
           ? recommendations 
-          : _getFallbackRecommendations();
+          : await _getGeminiRecommendations(userId);
     } catch (e) {
       print('Error getting cached recommendations: $e');
-      return _getFallbackRecommendations();
+      return await _getGeminiRecommendations(userId);
     }
   }
 
-  List<AIRecommendation> _getFallbackRecommendations() {
+  // ---------------------------------------------------------------------------
+  // Direct Gemini AI Integration (Fallback)
+  // ---------------------------------------------------------------------------
+
+  /// Generate recommendations using direct Gemini AI API call.
+  /// This is used as a fallback when Cloud Functions are unavailable.
+  Future<List<AIRecommendation>> _getGeminiRecommendations([String? userId]) async {
+    try {
+      print('🤖 Using direct Gemini AI fallback for recommendations...');
+      
+      // Build business context for AI
+      String businessContext = 'No specific business data available';
+      if (userId != null) {
+        businessContext = await _buildBusinessContext(userId);
+      }
+      
+      // Call Gemini AI directly
+      final response = await _callGeminiAI(businessContext);
+      
+      if (response != null) {
+        final recommendations = _parseGeminiRecommendations(response);
+        print('✅ Generated ${recommendations.length} AI recommendations via Gemini');
+        return recommendations;
+      } else {
+        return _getStaticFallbackRecommendations();
+      }
+    } catch (e) {
+      print('❌ Error calling Gemini AI: $e');
+      return _getStaticFallbackRecommendations();
+    }
+  }
+
+  /// Call Gemini AI API directly
+  Future<String?> _callGeminiAI(String businessContext) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_geminiApiUrl?key=$_geminiApiKey'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'contents': [
+            {
+              'parts': [
+                {
+                  'text': _buildGeminiPrompt(businessContext),
+                }
+              ]
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.7,
+            'topP': 0.95,
+            'topK': 64,
+            'maxOutputTokens': 2048,
+          },
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['candidates'][0]['content']['parts'][0]['text'];
+      } else {
+        print('Gemini API error: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('Error calling Gemini API: $e');
+      return null;
+    }
+  }
+
+  /// Build prompt for Gemini AI
+  String _buildGeminiPrompt(String businessContext) {
+    return '''
+You are a business intelligence advisor for MyInvoisMate, specializing in Malaysian e-invoicing compliance and business optimization.
+
+$businessContext
+
+Generate 5-7 personalized, actionable business recommendations. Focus on:
+1. MyInvois compliance risks and improvements
+2. Revenue optimization opportunities
+3. Customer retention strategies
+4. Cash flow management
+5. Operational efficiency
+
+IMPORTANT: Format your response as a JSON array with this exact structure:
+[
+  {
+    "category": "Compliance|Revenue|Customers|Operations|Tax",
+    "priority": "High|Medium|Low",
+    "title": "Brief actionable title",
+    "description": "2-3 sentences explaining the insight and action",
+    "impact": "Expected business benefit"
+  }
+]
+
+Return only the JSON array, no additional text.''';
+  }
+
+  /// Parse Gemini AI response into recommendations
+  List<AIRecommendation> _parseGeminiRecommendations(String response) {
+    try {
+      // Clean the response to extract JSON
+      String jsonStr = response.trim();
+      
+      // Remove markdown code blocks if present
+      if (jsonStr.startsWith('```json')) {
+        jsonStr = jsonStr.substring(7);
+      }
+      if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.substring(3);
+      }
+      if (jsonStr.endsWith('```')) {
+        jsonStr = jsonStr.substring(0, jsonStr.length - 3);
+      }
+      
+      final List<dynamic> jsonData = jsonDecode(jsonStr.trim());
+      
+      return jsonData.map((item) {
+        final Map<String, dynamic> data = Map<String, dynamic>.from(item);
+        return AIRecommendation(
+          category: data['category'] ?? 'Operations',
+          priority: data['priority'] ?? 'Medium',
+          title: data['title'] ?? 'Business Improvement',
+          description: data['description'] ?? 'Review your business operations.',
+          impact: data['impact'] ?? 'Improve efficiency',
+          timestamp: DateTime.now(),
+        );
+      }).toList();
+    } catch (e) {
+      print('Error parsing Gemini response: $e');
+      return _getStaticFallbackRecommendations();
+    }
+  }
+
+  /// Final static fallback if all AI methods fail
+  List<AIRecommendation> _getStaticFallbackRecommendations() {
     return [
       AIRecommendation(
         category: 'Compliance',
