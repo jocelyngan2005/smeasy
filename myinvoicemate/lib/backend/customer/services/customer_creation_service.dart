@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/customer_model.dart';
@@ -97,7 +98,8 @@ class CustomerCreationService {
         apiKey: apiKey,
         generationConfig: GenerationConfig(
           temperature: 0.1,
-          maxOutputTokens: 500,
+          maxOutputTokens: 2000,
+          responseMimeType: 'application/json',
         ),
         safetySettings: [
           SafetySetting(HarmCategory.harassment, HarmBlockThreshold.none),
@@ -112,79 +114,81 @@ Parse this customer creation request and extract customer details.
 
 Request: "$request"
 
-Extract the following fields (use "null" if not mentioned):
-- name: Company or person name (REQUIRED)
-- tin: Tax Identification Number (format: C followed by 13 digits, e.g., C1234567890123)
-- registration_number: Company registration number
-- identification_number: MyKad/Passport/ID number
-- email: Email address
-- phone: Contact phone number
-- sst_number: SST registration number
-- contact_person: Name of contact person
-- address_line1: Street address line 1
-- address_line2: Street address line 2
-- address_line3: Street address line 3
-- city: City name
-- state: State/Province
-- postal_code: Postal/ZIP code
-- country: Country (default "MY" for Malaysia)
-- notes: Any additional notes or comments
+Extract all mentioned fields. Use null for fields not mentioned.
 
-Respond with ONLY a JSON object with these exact keys (use null for missing values):
-{
-  "name": "string or null",
-  "tin": "string or null",
-  "registration_number": "string or null",
-  "identification_number": "string or null",
-  "email": "string or null",
-  "phone": "string or null",
-  "sst_number": "string or null",
-  "contact_person": "string or null",
-  "address_line1": "string or null",
-  "address_line2": "string or null",
-  "address_line3": "string or null",
-  "city": "string or null",
-  "state": "string or null",
-  "postal_code": "string or null",
-  "country": "string or null",
-  "notes": "string or null"
-}
+Return a JSON object with these keys:
+- name (required)
+- tin
+- registration_number
+- identification_number  
+- email
+- phone
+- sst_number
+- contact_person (look for "PIC", "contact person", or person name after company)
+- address_line1
+- address_line2
+- address_line3
+- city
+- state
+- postal_code
+- country (default "MY")
+- notes
 
-Examples:
-Request: "Add customer ABC Trading Sdn Bhd, TIN C1234567890123, email abc@example.com"
-Response: {"name": "ABC Trading Sdn Bhd", "tin": "C1234567890123", "email": "abc@example.com", "registration_number": null, "identification_number": null, "phone": null, "sst_number": null, "contact_person": null, "address_line1": null, "address_line2": null, "address_line3": null, "city": null, "state": null, "postal_code": null, "country": "MY", "notes": null}
-
-Request: "Create customer John Doe, phone 0123456789, address 123 Main St, Kuala Lumpur"
-Response: {"name": "John Doe", "tin": null, "registration_number": null, "identification_number": null, "email": null, "phone": "0123456789", "sst_number": null, "contact_person": null, "address_line1": "123 Main St", "address_line2": null, "address_line3": null, "city": "Kuala Lumpur", "state": null, "postal_code": null, "country": "MY", "notes": null}''';
+Example for "Add customer ABC Trading, TIN C1234567890123, email abc@example.com, PIC John Lee":
+{"name":"ABC Trading","tin":"C1234567890123","registration_number":null,"identification_number":null,"email":"abc@example.com","phone":null,"sst_number":null,"contact_person":"John Lee","address_line1":null,"address_line2":null,"address_line3":null,"city":null,"state":null,"postal_code":null,"country":"MY","notes":null}''';
       
       final content = [Content.text(prompt)];
       final response = await model.generateContent(content);
       final responseText = response.text?.trim() ?? '';
       
+      print('DEBUG CustomerCreation: AI response length: ${responseText.length}');
       print('DEBUG CustomerCreation: AI response: $responseText');
       
-      // Extract JSON from response (handle markdown code blocks)
+      // Extract JSON from response (handle markdown code blocks or pure JSON)
       String jsonText = responseText;
+      
+      // Check if response is wrapped in markdown code blocks
       if (jsonText.contains('```json')) {
-        jsonText = jsonText.split('```json')[1].split('```')[0].trim();
+        final parts = jsonText.split('```json');
+        if (parts.length > 1) {
+          final afterStart = parts[1];
+          final beforeEnd = afterStart.split('```');
+          if (beforeEnd.isNotEmpty) {
+            jsonText = beforeEnd[0].trim();
+          }
+        }
       } else if (jsonText.contains('```')) {
-        jsonText = jsonText.split('```')[1].split('```')[0].trim();
+        final parts = jsonText.split('```');
+        if (parts.length > 1) {
+          jsonText = parts[1].trim();
+        }
+      }
+      
+      // Clean up any remaining whitespace or newlines
+      jsonText = jsonText.trim();
+      
+      print('DEBUG CustomerCreation: Extracted JSON (length: ${jsonText.length}): $jsonText');
+      
+      // Validate JSON structure before parsing
+      if (!jsonText.startsWith('{') || !jsonText.endsWith('}')) {
+        print('DEBUG CustomerCreation: Invalid JSON structure - missing braces');
+        return _ParsedCustomerRequest(
+          success: false,
+          errorMessage: 'AI response is not valid JSON (missing braces)',
+        );
       }
       
       // Parse JSON
       final Map<String, dynamic> parsed;
       try {
-        parsed = Map<String, dynamic>.from(
-          // ignore: avoid_dynamic_calls
-          (response.text as dynamic).contains('```')
-              ? _parseJsonFromMarkdown(responseText)
-              : _parseJson(jsonText),
-        );
+        parsed = jsonDecode(jsonText) as Map<String, dynamic>;
+        print('DEBUG CustomerCreation: Successfully parsed JSON with ${parsed.length} fields');
       } catch (e) {
         print('DEBUG CustomerCreation: JSON parse error: $e');
+        print('DEBUG CustomerCreation: Failed JSON text: $jsonText');
         return _ParsedCustomerRequest(
           success: false,
-          errorMessage: 'Could not parse AI response as JSON',
+          errorMessage: 'Could not parse AI response as JSON: $e',
         );
       }
       
@@ -216,30 +220,7 @@ Response: {"name": "John Doe", "tin": null, "registration_number": null, "identi
     }
   }
   
-  Map<String, dynamic> _parseJson(String text) {
-    // Try different JSON parsing approaches
-    final jsonRegex = RegExp(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}');
-    final match = jsonRegex.firstMatch(text);
-    if (match != null) {
-      final jsonStr = match.group(0)!;
-      return Map<String, dynamic>.from(
-        // ignore: avoid_dynamic_calls
-        (Uri.dataFromString(jsonStr).data as dynamic),
-      );
-    }
-    throw Exception('No valid JSON found in response');
-  }
-  
-  Map<String, dynamic> _parseJsonFromMarkdown(String text) {
-    if (text.contains('```json')) {
-      final jsonText = text.split('```json')[1].split('```')[0].trim();
-      return _parseJson(jsonText);
-    } else if (text.contains('```')) {
-      final jsonText = text.split('```')[1].split('```')[0].trim();
-      return _parseJson(jsonText);
-    }
-    return _parseJson(text);
-  }
+
   
   String? _getStringValue(Map<String, dynamic> map, String key) {
     final value = map[key];
