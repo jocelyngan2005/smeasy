@@ -13,6 +13,9 @@ import '../../backend/invoice/models/invoice_draft.dart';
 import '../../backend/invoice/services/invoice_orchestrator.dart';
 import '../../backend/invoice/services/invoice_modification_service.dart';
 import '../../backend/knowledge_assistant/services/knowledge_assistant_service.dart';
+import '../../backend/customer/models/customer_model.dart';
+import '../../backend/customer/services/customer_service.dart';
+import '../../backend/customer/services/customer_creation_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
 import '../invoices/invoice_detail_screen.dart';
@@ -29,6 +32,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   final _invoiceService = InvoiceService();
   final _knowledgeAssistant = KnowledgeAssistantService();
   final _modificationService = InvoiceModificationService();
+  final _customerService = CustomerService();
+  final _customerCreationService = CustomerCreationService();
 
   late stt.SpeechToText _speech;
   bool _isListening = false;
@@ -41,6 +46,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   final _picker = ImagePicker();
   File? _imageFile;
   Invoice? _previewInvoice;
+  Customer? _previewCustomer;
   bool _isEditingInvoice = false;
 
   // Invoice editing controllers
@@ -168,8 +174,12 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         'image': attachedImage,
         'timestamp': DateTime.now(),
       });
-      // Add loading message
-      _messages.add({'type': 'loading', 'timestamp': DateTime.now()});
+      // Add loading message (category will be updated after intent detection)
+      _messages.add({
+        'type': 'loading',
+        'category': 'general', // will be updated after intent detection
+        'timestamp': DateTime.now(),
+      });
       _isProcessing = true;
       _textController.clear();
       _imageFile = null;
@@ -184,10 +194,28 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         return;
       }
       
-      // Detect user intent using AI (compliance_question, invoice_creation, or invoice_modification)
+      // Detect user intent using AI (compliance_question, invoice_creation, invoice_modification, or customer_creation)
       final intent = await _detectUserIntent(userMessage, hasExistingInvoice: _previewInvoice != null);
       
-      if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null) {
+      // Update loading message category based on intent
+      setState(() {
+        for (var msg in _messages) {
+          if (msg['type'] == 'loading') {
+            if (intent == 'compliance_question') {
+              msg['category'] = 'compliance';
+            } else if (intent == 'customer_creation') {
+              msg['category'] = 'customer';
+            } else {
+              msg['category'] = 'invoice';
+            }
+          }
+        }
+      });
+      
+      if (intent == 'customer_creation' && attachedImage == null) {
+        // Handle customer creation
+        await _handleCustomerCreation(userMessage);
+      } else if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null) {
         // Handle invoice modification
         await _handleInvoiceModification(userMessage);
       } else if (intent == 'compliance_question' && attachedImage == null) {
@@ -233,6 +261,78 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     
     print('DEBUG: Greeting check - Input: "$input", IsGreeting: $isGreeting');
     return isGreeting;
+  }
+
+  /// Handle customer creation using the CustomerCreationService
+  Future<void> _handleCustomerCreation(String request) async {
+    try {
+      print('DEBUG CustomerCreation: Parsing request: "$request"');
+      
+      // Use the service to create customer profile
+      final result = await _customerCreationService.createCustomerFromRequest(
+        request: request,
+        userId: 'user123', // TODO: Replace with actual user ID from auth
+      );
+      
+      if (mounted) {
+        if (result.success && result.customer != null) {
+          setState(() {
+            // Remove loading message
+            _messages.removeWhere((msg) => msg['type'] == 'loading');
+            
+            // Store preview customer
+            _previewCustomer = result.customer;
+            
+            // Build response message
+            final responseText = StringBuffer();
+            responseText.writeln('✅ Customer profile created!\n');
+            responseText.writeln(result.summary);
+            
+            // Add missing fields warning if any
+            if (result.missingFields != null && result.missingFields!.isNotEmpty) {
+              responseText.writeln('\n⚠️ **Optional fields not provided:**');
+              for (var field in result.missingFields!) {
+                responseText.writeln('  • $field');
+              }
+            }
+            
+            responseText.writeln('\n**Next Steps:**');
+            responseText.writeln('  • Review the customer details below');
+            responseText.writeln('  • Click "Save Customer" to add to your database');
+            responseText.writeln('  • Or say "Cancel" to discard');
+            
+            // Add confirmation message with customer preview
+            _messages.add({
+              'type': 'assistant',
+              'text': responseText.toString(),
+              'customer': result.customer,
+              'timestamp': DateTime.now(),
+            });
+            
+            _isProcessing = false;
+          });
+          
+          _scrollToBottom();
+        } else {
+          throw Exception(result.errorMessage ?? 'Unknown error');
+        }
+      }
+    } catch (e) {
+      print('DEBUG: Error in customer creation: $e');
+      if (mounted) {
+        setState(() {
+          // Remove loading message
+          _messages.removeWhere((msg) => msg['type'] == 'loading');
+          _messages.add({
+            'type': 'error',
+            'text': 'Could not create customer profile: ${e.toString()}\n\nPlease try rephrasing your request, like:\n• "Add customer ABC Trading Sdn Bhd, TIN C1234567890123, email abc@example.com"\n• "Create customer John Doe, phone 0123456789"',
+            'timestamp': DateTime.now(),
+          });
+          _isProcessing = false;
+        });
+        _scrollToBottom();
+      }
+    }
   }
 
   /// Handle invoice modification using the InvoiceModificationService
@@ -318,6 +418,10 @@ I can help you with:
    • "Update buyer TIN to C12345678901"
    • "Set tax to 50"
 
+👥 **Add Customers**
+   • "Add customer ABC Trading Sdn Bhd, TIN C1234567890123"
+   • "Create customer John Doe, email john@example.com"
+
 📚 **Compliance Questions**
    • "What is LHDN compliance?"
    • "When is MyInvois mandatory?"
@@ -334,7 +438,7 @@ How can I assist you today?''',
   }
 
   /// Detect user intent using Gemini AI
-  /// Returns: 'compliance_question', 'invoice_creation', or 'invoice_modification'
+  /// Returns: 'compliance_question', 'invoice_creation', 'invoice_modification', or 'customer_creation'
   Future<String> _detectUserIntent(String input, {bool hasExistingInvoice = false}) async {
     try {
       // Get API key
@@ -377,18 +481,26 @@ Classify this user input into ONE category.
 
 User input: "$input"
 
+Categories:
+- compliance_question: Asking about LHDN, MyInvois rules, tax, compliance, regulations, deadlines
+- customer_creation: Requesting to add/create/register a NEW customer/client with their details
+- invoice_creation: Requesting to create/generate/make a NEW invoice with details$modificationContext
+
 Rules:
-- If CLEARLY asking about LHDN, MyInvois rules, tax, compliance, regulations, deadlines → respond: compliance_question
-- If CLEARLY requesting to create/generate/make a NEW invoice with details → respond: invoice_creation$modificationContext
+- If contains "add customer", "create customer", "new customer", "register customer", "add client", "create client" → respond: customer_creation
+- If CLEARLY asking about LHDN, MyInvois rules, tax, compliance → respond: compliance_question
+- If CLEARLY requesting to create/generate a NEW invoice → respond: invoice_creation
 - If unclear or ambiguous → respond: invoice_creation
 
 Examples:
+- "Add customer ABC Trading Sdn Bhd" → customer_creation
+- "Create customer John Doe, email john@example.com" → customer_creation
+- "Register new client with TIN C1234567890123" → customer_creation
 - "What is LHDN compliance deadline?" → compliance_question
 - "Create invoice for ABC Corp RM500" → invoice_creation
-- "Tell me about invoice rules" → compliance_question
-- "Invoice for client" → invoice_creation$modificationExamples
+- "Tell me about invoice rules" → compliance_question$modificationExamples
 
-Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExistingInvoice ? ' OR invoice_modification' : ''}''';
+Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoice_creation${hasExistingInvoice ? ' OR invoice_modification' : ''}''';
 
       // Use generateContent with a list of Content objects
       final content = [Content.text(prompt)];
@@ -400,6 +512,8 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
       // Return the detected intent
       if (classification.contains('modification') && hasExistingInvoice) {
         return 'invoice_modification';
+      } else if (classification.contains('customer')) {
+        return 'customer_creation';
       } else if (classification.contains('compliance')) {
         return 'compliance_question';
       } else if (classification.contains('invoice') || classification.contains('creation')) {
@@ -408,6 +522,12 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
         // Fallback: If AI response is unclear, use simple heuristic
         print('DEBUG: AI classification unclear, using fallback heuristic');
         final lower = input.toLowerCase();
+        
+        // Check for customer creation keywords
+        final customerKeywords = ['add customer', 'create customer', 'new customer', 'register customer', 'add client', 'create client'];
+        if (customerKeywords.any((k) => lower.contains(k))) {
+          return 'customer_creation';
+        }
         
         // Check for modification keywords if invoice exists
         if (hasExistingInvoice) {
@@ -1043,7 +1163,9 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
           ],
           Flexible(
             child: isLoading
-                ? const _LoadingMessageBubble()
+                ? _LoadingMessageBubble(
+                    category: message['category'] ?? 'general',
+                  )
                 : Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -1126,6 +1248,8 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
                                 ),
                         if (message['invoice'] != null)
                           _buildInvoicePreviewCard(message['invoice'], message, index),
+                        if (message['customer'] != null)
+                          _buildCustomerPreviewCard(message['customer']),
                       ],
                     ),
                   ),
@@ -1145,6 +1269,226 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
         ],
       ),
     );
+  }
+
+  Widget _buildCustomerPreviewCard(Customer customer) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue[200]!, width: 2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.person, color: AppColors.primary, size: 24),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Customer Profile',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              
+              // Name
+              _buildCustomerInfoRow('Company/Name', customer.name, bold: true),
+              if (customer.tin != null) 
+                _buildCustomerInfoRow('TIN', customer.tin!),
+              if (customer.registrationNumber != null)
+                _buildCustomerInfoRow('Registration No.', customer.registrationNumber!),
+              if (customer.identificationNumber != null)
+                _buildCustomerInfoRow('ID Number', customer.identificationNumber!),
+              if (customer.email != null)
+                _buildCustomerInfoRow('Email', customer.email!),
+              if (customer.contactNumber != null)
+                _buildCustomerInfoRow('Phone', customer.contactNumber!),
+              if (customer.sstNumber != null)
+                _buildCustomerInfoRow('SST Number', customer.sstNumber!),
+              if (customer.contactPerson != null)
+                _buildCustomerInfoRow('Contact Person', customer.contactPerson!),
+              
+              // Primary Address
+              if (customer.primaryAddress != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Primary Address:',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  customer.primaryAddress!.fullAddress,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[800],
+                  ),
+                ),
+              ],
+              
+              if (customer.notes != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Notes:',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  customer.notes!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[800],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        
+        // Action Buttons
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _previewCustomer = null;
+                    _messages.removeWhere((msg) => msg['customer'] != null);
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[300],
+                  foregroundColor: Colors.black87,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ElevatedButton(
+                  onPressed: () => _saveCustomer(customer),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Save Customer',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildCustomerInfoRow(String label, String value, {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[700],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                color: bold ? AppColors.primary : Colors.grey[800],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Future<void> _saveCustomer(Customer customer) async {
+    setState(() => _isProcessing = true);
+
+    try {
+      final saved = await _customerService.createCustomer(customer);
+
+      if (mounted && saved != null) {
+        Helpers.showSuccessSnackbar(
+          context,
+          'Customer "${customer.name}" saved successfully!',
+        );
+
+        setState(() {
+          _previewCustomer = null;
+          // Add success message
+          _messages.add({
+            'type': 'assistant',
+            'text': '✅ Customer "${customer.name}" has been added to your database.\n\nYou can now use this customer when creating invoices.',
+            'timestamp': DateTime.now(),
+          });
+          _isProcessing = false;
+        });
+
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        Helpers.showErrorSnackbar(context, 'Failed to save customer: ${e.toString()}');
+        setState(() => _isProcessing = false);
+      }
+    }
   }
 
   Widget _buildInvoicePreviewCard(Invoice invoice, Map<String, dynamic> message, int messageIndex) {
@@ -1877,7 +2221,9 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
 
 // Animated loading message bubble
 class _LoadingMessageBubble extends StatefulWidget {
-  const _LoadingMessageBubble();
+  final String category; // 'invoice', 'compliance', 'customer', or 'general'
+  
+  const _LoadingMessageBubble({this.category = 'general'});
 
   @override
   State<_LoadingMessageBubble> createState() => _LoadingMessageBubbleState();
@@ -1910,11 +2256,17 @@ class _LoadingMessageBubbleState extends State<_LoadingMessageBubble>
 
   @override
   Widget build(BuildContext context) {
+    final baseText = widget.category == 'compliance' 
+        ? 'Crafting Answer' 
+        : widget.category == 'customer'
+            ? 'Creating Profile'
+            : 'Crafting Invoice';
+    
     return AnimatedBuilder(
       animation: _dotCount,
       builder: (context, child) {
         return Text(
-          'Crafting Response${"." * (_dotCount.value + 1)}',
+          '$baseText${"." * (_dotCount.value + 1)}',
           style: const TextStyle(
             color: Colors.black87,
             fontSize: 14,
