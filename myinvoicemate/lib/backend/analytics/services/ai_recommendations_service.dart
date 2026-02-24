@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../firestore_collections.dart';
@@ -443,7 +444,7 @@ Missing Buyer TIN: $missingTIN
             'temperature': 0.7,
             'topP': 0.95,
             'topK': 64,
-            'maxOutputTokens': 2048,
+            'maxOutputTokens': 4096,
           },
         }),
       );
@@ -772,24 +773,45 @@ STRICT RULES:
   
   /// Try to reconstruct broken JSON by closing incomplete objects
   String _reconstructBrokenJson(String jsonStr) {
-    // If JSON is incomplete, try to close it properly
-    if (!jsonStr.trim().endsWith(']')) {
-      // Count open braces vs closed braces
+    try {
+      // If JSON is incomplete, try to close it properly
+      jsonStr = jsonStr.trim();
+      
+      // Count open/close structures
       int openBraces = '{'.allMatches(jsonStr).length;
       int closeBraces = '}'.allMatches(jsonStr).length;
+      int openBrackets = '['.allMatches(jsonStr).length;
+      int closeBrackets = ']'.allMatches(jsonStr).length;
       
-      // Add missing closing braces
-      for (int i = 0; i < openBraces - closeBraces; i++) {
-        jsonStr += '}';
+      // Remove any trailing incomplete content after the last complete object
+      if (openBraces > closeBraces) {
+        // Find the last complete object by looking for the last proper closing brace
+        int lastValidBrace = jsonStr.lastIndexOf('}');
+        if (lastValidBrace > 0) {
+          // Check if there's incomplete content after this
+          String afterLastBrace = jsonStr.substring(lastValidBrace + 1).trim();
+          if (afterLastBrace.startsWith(',')) {
+            afterLastBrace = afterLastBrace.substring(1).trim();
+          }
+          
+          // If there's an incomplete object, remove it
+          if (afterLastBrace.startsWith('{') && !afterLastBrace.endsWith('}')) {
+            jsonStr = jsonStr.substring(0, lastValidBrace + 1);
+          }
+        }
       }
       
-      // Add missing closing bracket for array
-      if (!jsonStr.trim().endsWith(']')) {
+      // Ensure proper array closure
+      if (!jsonStr.endsWith(']') && openBrackets > closeBrackets) {
         jsonStr += ']';
       }
+      
+      print('🔧 Reconstructed JSON: ${jsonStr.length > 200 ? jsonStr.substring(0, 200) + '...' : jsonStr}');
+      return jsonStr;
+    } catch (e) {
+      print('❌ Error reconstructing JSON: $e');
+      return jsonStr;
     }
-    
-    return jsonStr;
   }
 
   /// Parse structured text when JSON fails
@@ -797,37 +819,29 @@ STRICT RULES:
     try {
       List<AIRecommendation> recommendations = [];
       
-      // Look for recommendation blocks in text format
-      List<String> sections = response.split('\n\n');
+      print('🔍 Parsing structured text from: ${response.substring(0, math.min(200, response.length))}...');
       
-      for (String section in sections) {
-        if (section.trim().isEmpty) continue;
-        
-        // Try to extract recommendation info from text
-        String category = 'Operations';
-        String priority = 'Medium'; 
-        String title = 'Business Improvement';
-        String description = section.trim();
-        String impact = 'Improve operations';
-        
-        // Look for patterns like "Category:", "Priority:", etc.
-        List<String> lines = section.split('\n');
-        for (String line in lines) {
-          line = line.trim();
-          if (line.toLowerCase().startsWith('category:')) {
-            category = line.substring(9).trim();
-          } else if (line.toLowerCase().startsWith('priority:')) {
-            priority = line.substring(9).trim();
-          } else if (line.toLowerCase().startsWith('title:')) {
-            title = line.substring(6).trim();
-          } else if (line.toLowerCase().startsWith('description:')) {
-            description = line.substring(12).trim();
-          } else if (line.toLowerCase().startsWith('impact:')) {
-            impact = line.substring(7).trim();
-          }
-        }
-        
-        if (title.isNotEmpty && description.isNotEmpty) {
+      // Try to extract individual recommendations from the text
+      // Look for patterns like "category": "...", "priority": "...", etc.
+      RegExp recPattern = RegExp(
+        r'"category"\s*:\s*"([^"]+)"[^}]*"priority"\s*:\s*"([^"]+)"[^}]*"title"\s*:\s*"([^"]+)"[^}]*"description"\s*:\s*"([^"]+)"[^}]*"impact"\s*:\s*"([^"]+)"',
+        caseSensitive: false,
+        multiLine: true,
+      );
+      
+      Iterable<RegExpMatch> matches = recPattern.allMatches(response);
+      print('🔍 Found ${matches.length} recommendation patterns in text');
+      
+      for (RegExpMatch match in matches) {
+        try {
+          String category = match.group(1)?.trim() ?? 'Operations';
+          String priority = match.group(2)?.trim() ?? 'Medium';
+          String title = match.group(3)?.trim() ?? 'Business Recommendation';
+          String description = match.group(4)?.trim() ?? 'Review business operations';
+          String impact = match.group(5)?.trim() ?? 'Improve efficiency';
+          
+          print('🔍 Extracted - Title: "$title", Category: "$category"');
+          
           recommendations.add(AIRecommendation(
             category: _validateCategory(category),
             priority: _validatePriority(priority),
@@ -836,14 +850,78 @@ STRICT RULES:
             impact: _cleanText(impact),
             timestamp: DateTime.now(),
           ));
+        } catch (e) {
+          print('❌ Error parsing individual recommendation: $e');
         }
+      }
+      
+      // If regex approach failed, try simpler line-by-line approach
+      if (recommendations.isEmpty) {
+        print('🔍 Regex failed, trying line-by-line parsing...');
+        recommendations = _trySimpleTextParsing(response);
       }
       
       return recommendations;
     } catch (e) {
-      print('Structured text parsing failed: $e');
+      print('❌ Structured text parsing failed: $e');
       return [];
     }
+  }
+  
+  /// Simple text parsing fallback
+  List<AIRecommendation> _trySimpleTextParsing(String response) {
+    List<AIRecommendation> recommendations = [];
+    
+    // Split by common delimiters and look for recommendation-like content
+    List<String> lines = response.split(RegExp(r'[\n,}]'));
+    
+    String? currentCategory, currentPriority, currentTitle, currentDescription, currentImpact;
+    
+    for (String line in lines) {
+      line = line.trim().replaceAll(RegExp(r'^[\[{"\s]*'), '').replaceAll(RegExp(r'[}\]"\s]*$'), '');
+      
+      if (line.isEmpty) continue;
+      
+      if (line.toLowerCase().contains('category')) {
+        currentCategory = _extractValue(line);
+      } else if (line.toLowerCase().contains('priority')) {
+        currentPriority = _extractValue(line);
+      } else if (line.toLowerCase().contains('title')) {
+        currentTitle = _extractValue(line);
+      } else if (line.toLowerCase().contains('description')) {
+        currentDescription = _extractValue(line);
+      } else if (line.toLowerCase().contains('impact')) {
+        currentImpact = _extractValue(line);
+        
+        // Complete recommendation found
+        if (currentTitle != null && currentTitle.isNotEmpty) {
+          recommendations.add(AIRecommendation(
+            category: _validateCategory(currentCategory ?? 'Operations'),
+            priority: _validatePriority(currentPriority ?? 'Medium'),
+            title: _cleanText(currentTitle),
+            description: _cleanText(currentDescription ?? 'Review and optimize business operations'),
+            impact: _cleanText(currentImpact),
+            timestamp: DateTime.now(),
+          ));
+          
+          print('🔍 Built recommendation: "$currentTitle"');
+          
+          // Reset for next recommendation
+          currentCategory = currentPriority = currentTitle = currentDescription = currentImpact = null;
+        }
+      }
+    }
+    
+    return recommendations;
+  }
+  
+  /// Extract value from key-value line
+  String _extractValue(String line) {
+    // Remove field name and extract value
+    if (line.contains(':')) {
+      return line.split(':').skip(1).join(':').trim().replaceAll(RegExp(r'^["\s]*|["\s,]*$'), '');
+    }
+    return line;
   }
 
   /// Final static fallback if all AI methods fail
