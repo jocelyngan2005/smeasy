@@ -31,7 +31,7 @@ class KnowledgeAssistantService {
     }
 
     _model = GenerativeModel(
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash',
       apiKey: apiKey,
       generationConfig: GenerationConfig(
         temperature: 0.3, // Lower temperature for more factual responses

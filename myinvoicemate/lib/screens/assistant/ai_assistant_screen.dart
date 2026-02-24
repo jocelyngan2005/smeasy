@@ -461,7 +461,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
           
           // Add sources
           if (complianceAnswer.sources.isNotEmpty) {
-            responseText.writeln('\n**Sources:**');
+            responseText.writeln('\n📝 **Sources:**');
             for (var source in complianceAnswer.sources) {
               print('DEBUG UI: Rendering source: $source');
               responseText.writeln('  • $source');
@@ -470,7 +470,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
           
           // Add related topics
           if (complianceAnswer.relatedTopics.isNotEmpty) {
-            responseText.writeln('\n**Related Topics:**');
+            responseText.writeln('\n📚 **Related Topics:**');
             for (var topic in complianceAnswer.relatedTopics) {
               responseText.writeln('  • $topic');
             }
@@ -478,7 +478,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
           
           // Add confidence
           final confidence = (complianceAnswer.confidenceScore * 100).toStringAsFixed(0);
-          responseText.writeln('\nConfidence: $confidence%');
+          responseText.writeln('\n🎯 **Confidence**: $confidence%');
           
           _messages.add({
             'type': 'compliance',
@@ -1022,9 +1022,8 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: isCompliance 
-                      ? [const Color(0xFF1A8B4A), const Color(0xFF2ECC71)]  // Green for compliance
-                      : [const Color(0xFF2E3193), const Color(0xFF0533F4)],  // Blue for invoice
+                  colors: 
+                      [const Color(0xFF2E3193), const Color(0xFF0533F4)],  // Blue for invoice
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -1048,14 +1047,10 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
                           ? const Color(0xFF2E3193)
                           : isError
                           ? Colors.red[50]
-                          : isCompliance
-                          ? Colors.green[50]
                           : Colors.white,
                       border: !isUser && !isError
                           ? Border.all(
-                              color: isCompliance 
-                                  ? Colors.green[200]! 
-                                  : Colors.grey[300]!, 
+                              color:Colors.grey[300]!, 
                               width: 1,
                             )
                           : null,
@@ -1086,7 +1081,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExisti
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.green[700],
+                              color: Color(0xFF2E3193),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -1901,7 +1896,7 @@ class _LoadingMessageBubbleState extends State<_LoadingMessageBubble>
       animation: _dotCount,
       builder: (context, child) {
         return Text(
-          'Crafting Invoice${"." * (_dotCount.value + 1)}',
+          'Crafting Response${"." * (_dotCount.value + 1)}',
           style: const TextStyle(
             color: Colors.black87,
             fontSize: 14,
