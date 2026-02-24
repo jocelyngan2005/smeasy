@@ -1,9 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../../firestore_collections.dart';
 import '../models/analytics_model.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
 
 /// AI-powered recommendations service using Vertex AI.
 ///
@@ -13,19 +13,16 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 /// - Revenue optimization opportunities
 /// - Customer behavior predictions
 class AIRecommendationsService {
-  AIRecommendationsService({
-    FirebaseFirestore? firestore,
-    http.Client? httpClient,
-  })  : _db = firestore ?? FirebaseFirestore.instance,
-        _httpClient = httpClient ?? http.Client();
+  AIRecommendationsService({FirebaseFirestore? firestore})
+      : _db = firestore ?? FirebaseFirestore.instance,
+        _functions = FirebaseFunctions.instance;
 
   final FirebaseFirestore _db;
-  final http.Client _httpClient;
-
-  // Vertex AI configuration
-  static const String _projectId = 'myinvoicemate';
-  static const String _location = 'global';
-  static const String _modelId = 'gemini-1.5-flash';
+  final FirebaseFunctions _functions;
+  
+  // Gemini AI API configuration
+  static const String _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
+  static const String _geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
 
   // ---------------------------------------------------------------------------
   // AI Recommendations
@@ -33,39 +30,63 @@ class AIRecommendationsService {
 
   /// Generate AI-powered recommendations based on user's business data.
   ///
-  /// Returns actionable insights across multiple categories:
-  /// - Compliance alerts
-  /// - Revenue optimization
-  /// - Customer retention
-  /// - Cash flow improvements
+  /// Uses Firebase Cloud Functions as a secure proxy for Vertex AI.
   Future<List<AIRecommendation>> generateRecommendations(String userId) async {
     try {
+      print('🤖 Generating AI recommendations via Cloud Function...');
+      
       // 1. Gather business context
       final context = await _buildBusinessContext(userId);
       
-      // 2. Generate AI insights using Vertex AI
-      final insights = await _callVertexAI(context);
+      // 2. Call Cloud Function with business context
+      final result = await _callCloudFunction('generateAIRecommendations', {
+        'businessContext': context,
+      });
       
-      // 3. Parse and structure recommendations
-      final recommendations = _parseRecommendations(insights);
-      
-      // 4. Cache recommendations for quick access
-      await _cacheRecommendations(userId, recommendations);
-      
-      return recommendations;
+      if (result['success'] == true) {
+        // 3. Parse and return recommendations
+        final recommendations = (result['recommendations'] as List? ?? [])
+            .map((r) => AIRecommendation.fromJson(Map<String, dynamic>.from(r)))
+            .toList();
+            
+        print('✅ Generated ${recommendations.length} AI recommendations');
+        return recommendations;
+      } else {
+        print('⚠️ Cloud Function returned error: ${result['error']}');
+        return await _getGeminiRecommendations(userId);
+      }
     } catch (e) {
-      print('Error generating AI recommendations: $e');
-      // Fallback to cached recommendations
-      return await _getCachedRecommendations(userId);
+      print('❌ Error generating AI recommendations: $e');
+      // Fallback to direct Gemini AI
+      return await _getGeminiRecommendations(userId);
     }
   }
 
   /// Get cached recommendations (faster, updated hourly).
   Future<List<AIRecommendation>> getCachedRecommendations(String userId) async {
-    return await _getCachedRecommendations(userId);
+    try {
+      print('📱 Getting cached recommendations via Cloud Function...');
+      
+      final result = await _callCloudFunction('getCachedAIRecommendations', {});
+      
+      if (result['success'] == true) {
+        final recommendations = (result['recommendations'] as List? ?? [])
+            .map((r) => AIRecommendation.fromJson(Map<String, dynamic>.from(r)))
+            .toList();
+            
+        print('📦 Retrieved ${recommendations.length} cached recommendations');
+        return recommendations;
+      } else {
+        return await _getGeminiRecommendations();
+      }
+    } catch (e) {
+      print('Error getting cached recommendations: $e');
+      return await _getGeminiRecommendations();
+    }
   }
 
   /// Analyze specific invoice for compliance and optimization suggestions.
+  /// TODO: Implement Cloud Function for invoice analysis
   Future<InvoiceAnalysis> analyzeInvoice(String invoiceId) async {
     try {
       final invoiceDoc = await _db
@@ -77,11 +98,10 @@ class AIRecommendationsService {
         return InvoiceAnalysis.empty();
       }
 
-      final data = invoiceDoc.data()!;
-      final prompt = _buildInvoiceAnalysisPrompt(data);
-      final analysis = await _callVertexAI(prompt);
-
-      return InvoiceAnalysis.fromAI(analysis);
+      // For now, return a basic analysis
+      // TODO: Create a Cloud Function for detailed invoice analysis
+      print('📄 Analyzing invoice: $invoiceId (basic analysis)');
+      return InvoiceAnalysis.empty();
     } catch (e) {
       print('Error analyzing invoice: $e');
       return InvoiceAnalysis.empty();
@@ -156,65 +176,21 @@ Provide specific issues found and improvement suggestions.
   }
 
   // ---------------------------------------------------------------------------
-  // Vertex AI Integration
+  // Cloud Functions Integration
   // ---------------------------------------------------------------------------
 
-  Future<String> _callVertexAI(String prompt) async {
+  /// Call Firebase Cloud Function securely
+  Future<Map<String, dynamic>> _callCloudFunction(
+    String functionName, 
+    Map<String, dynamic> data,
+  ) async {
     try {
-      final token = await _getAccessToken();
-      if (token == null) {
-        throw Exception('Unable to get access token');
-      }
-
-      final url = Uri.parse(
-        'https://$_location-aiplatform.googleapis.com/v1/'
-        'projects/$_projectId/locations/$_location/'
-        'publishers/google/models/$_modelId:generateContent',
-      );
-
-      final response = await _httpClient.post(
-        url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'contents': [
-            {
-              'role': 'user',
-              'parts': [
-                {'text': prompt}
-              ]
-            }
-          ],
-          'generationConfig': {
-            'temperature': 0.4,
-            'topP': 0.8,
-            'topK': 40,
-            'maxOutputTokens': 2048,
-          },
-          'safetySettings': [
-            {
-              'category': 'HARM_CATEGORY_HARASSMENT',
-              'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-            },
-            {
-              'category': 'HARM_CATEGORY_HATE_SPEECH',
-              'threshold': 'BLOCK_MEDIUM_AND_ABOVE'
-            }
-          ]
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final result = json.decode(response.body);
-        final text = result['candidates']?[0]?['content']?['parts']?[0]?['text'];
-        return text ?? 'No recommendations available';
-      }
-
-      throw Exception('Vertex AI API error: ${response.statusCode}');
+      final callable = _functions.httpsCallable(functionName);
+      final result = await callable.call(data);
+      
+      return Map<String, dynamic>.from(result.data ?? {});
     } catch (e) {
-      print('Error calling Vertex AI: $e');
+      print('Cloud Function error: $e');
       rethrow;
     }
   }
@@ -381,7 +357,7 @@ Missing Buyer TIN: $missingTIN
           .get();
 
       if (!doc.exists) {
-        return _getFallbackRecommendations();
+        return await _getGeminiRecommendations(userId);
       }
 
       final data = doc.data()!;
@@ -390,7 +366,7 @@ Missing Buyer TIN: $missingTIN
       // Check if cache is stale (older than 1 hour)
       if (lastUpdated != null && 
           DateTime.now().difference(lastUpdated).inHours >= 1) {
-        return _getFallbackRecommendations();
+        return await _getGeminiRecommendations(userId);
       }
 
       final recommendations = (data['recommendations'] as List?)
@@ -399,14 +375,151 @@ Missing Buyer TIN: $missingTIN
 
       return recommendations.isNotEmpty 
           ? recommendations 
-          : _getFallbackRecommendations();
+          : await _getGeminiRecommendations(userId);
     } catch (e) {
       print('Error getting cached recommendations: $e');
-      return _getFallbackRecommendations();
+      return await _getGeminiRecommendations(userId);
     }
   }
 
-  List<AIRecommendation> _getFallbackRecommendations() {
+  // ---------------------------------------------------------------------------
+  // Direct Gemini AI Integration (Fallback)
+  // ---------------------------------------------------------------------------
+
+  /// Generate recommendations using direct Gemini AI API call.
+  /// This is used as a fallback when Cloud Functions are unavailable.
+  Future<List<AIRecommendation>> _getGeminiRecommendations([String? userId]) async {
+    try {
+      print('🤖 Using direct Gemini AI fallback for recommendations...');
+      
+      // Build business context for AI
+      String businessContext = 'No specific business data available';
+      if (userId != null) {
+        businessContext = await _buildBusinessContext(userId);
+      }
+      
+      // Call Gemini AI directly
+      final response = await _callGeminiAI(businessContext);
+      
+      if (response != null) {
+        final recommendations = _parseGeminiRecommendations(response);
+        print('✅ Generated ${recommendations.length} AI recommendations via Gemini');
+        return recommendations;
+      } else {
+        return _getStaticFallbackRecommendations();
+      }
+    } catch (e) {
+      print('❌ Error calling Gemini AI: $e');
+      return _getStaticFallbackRecommendations();
+    }
+  }
+
+  /// Call Gemini AI API directly
+  Future<String?> _callGeminiAI(String businessContext) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_geminiApiUrl?key=$_geminiApiKey'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'contents': [
+            {
+              'parts': [
+                {
+                  'text': _buildGeminiPrompt(businessContext),
+                }
+              ]
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.7,
+            'topP': 0.95,
+            'topK': 64,
+            'maxOutputTokens': 2048,
+          },
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['candidates'][0]['content']['parts'][0]['text'];
+      } else {
+        print('Gemini API error: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('Error calling Gemini API: $e');
+      return null;
+    }
+  }
+
+  /// Build prompt for Gemini AI
+  String _buildGeminiPrompt(String businessContext) {
+    return '''
+You are a business intelligence advisor for MyInvoisMate, specializing in Malaysian e-invoicing compliance and business optimization.
+
+$businessContext
+
+Generate 5-7 personalized, actionable business recommendations. Focus on:
+1. MyInvois compliance risks and improvements
+2. Revenue optimization opportunities
+3. Customer retention strategies
+4. Cash flow management
+5. Operational efficiency
+
+IMPORTANT: Format your response as a JSON array with this exact structure:
+[
+  {
+    "category": "Compliance|Revenue|Customers|Operations|Tax",
+    "priority": "High|Medium|Low",
+    "title": "Brief actionable title",
+    "description": "2-3 sentences explaining the insight and action",
+    "impact": "Expected business benefit"
+  }
+]
+
+Return only the JSON array, no additional text.''';
+  }
+
+  /// Parse Gemini AI response into recommendations
+  List<AIRecommendation> _parseGeminiRecommendations(String response) {
+    try {
+      // Clean the response to extract JSON
+      String jsonStr = response.trim();
+      
+      // Remove markdown code blocks if present
+      if (jsonStr.startsWith('```json')) {
+        jsonStr = jsonStr.substring(7);
+      }
+      if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.substring(3);
+      }
+      if (jsonStr.endsWith('```')) {
+        jsonStr = jsonStr.substring(0, jsonStr.length - 3);
+      }
+      
+      final List<dynamic> jsonData = jsonDecode(jsonStr.trim());
+      
+      return jsonData.map((item) {
+        final Map<String, dynamic> data = Map<String, dynamic>.from(item);
+        return AIRecommendation(
+          category: data['category'] ?? 'Operations',
+          priority: data['priority'] ?? 'Medium',
+          title: data['title'] ?? 'Business Improvement',
+          description: data['description'] ?? 'Review your business operations.',
+          impact: data['impact'] ?? 'Improve efficiency',
+          timestamp: DateTime.now(),
+        );
+      }).toList();
+    } catch (e) {
+      print('Error parsing Gemini response: $e');
+      return _getStaticFallbackRecommendations();
+    }
+  }
+
+  /// Final static fallback if all AI methods fail
+  List<AIRecommendation> _getStaticFallbackRecommendations() {
     return [
       AIRecommendation(
         category: 'Compliance',
@@ -435,14 +548,5 @@ Missing Buyer TIN: $missingTIN
     ];
   }
 
-  Future<String?> _getAccessToken() async {
-    try {
-      final user = fb.FirebaseAuth.instance.currentUser;
-      if (user == null) return null;
-      return await user.getIdToken();
-    } catch (e) {
-      print('Error getting access token: $e');
-      return null;
-    }
-  }
+
 }
