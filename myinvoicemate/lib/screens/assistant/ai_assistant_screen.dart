@@ -11,6 +11,7 @@ import '../../backend/invoice/models/invoice_model.dart';
 import '../../backend/invoice/models/invoice_adapter.dart';
 import '../../backend/invoice/models/invoice_draft.dart';
 import '../../backend/invoice/services/invoice_orchestrator.dart';
+import '../../backend/invoice/services/invoice_modification_service.dart';
 import '../../backend/knowledge_assistant/services/knowledge_assistant_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/helpers.dart';
@@ -27,6 +28,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   final _orchestrator = InvoiceGenerationOrchestrator();
   final _invoiceService = InvoiceService();
   final _knowledgeAssistant = KnowledgeAssistantService();
+  final _modificationService = InvoiceModificationService();
 
   late stt.SpeechToText _speech;
   bool _isListening = false;
@@ -182,10 +184,13 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         return;
       }
       
-      // Detect if this is a compliance question or invoice generation
-      final isComplianceQuestion = await _detectUserIntent(userMessage);
+      // Detect user intent using AI (compliance_question, invoice_creation, or invoice_modification)
+      final intent = await _detectUserIntent(userMessage, hasExistingInvoice: _previewInvoice != null);
       
-      if (isComplianceQuestion && attachedImage == null) {
+      if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null) {
+        // Handle invoice modification
+        await _handleInvoiceModification(userMessage);
+      } else if (intent == 'compliance_question' && attachedImage == null) {
         // Handle compliance question with Knowledge Assistant
         await _handleComplianceQuestion(userMessage);
       } else {
@@ -230,6 +235,67 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     return isGreeting;
   }
 
+  /// Handle invoice modification using the InvoiceModificationService
+  Future<void> _handleInvoiceModification(String request) async {
+    if (_previewInvoice == null) return;
+    
+    try {
+      // Use the service to modify the invoice
+      final result = await _modificationService.modifyInvoice(
+        invoice: _previewInvoice!,
+        modificationRequest: request,
+      );
+      
+      if (mounted) {
+        if (result.success) {
+          setState(() {
+            // Remove loading message
+            _messages.removeWhere((msg) => msg['type'] == 'loading');
+            
+            // Update preview invoice
+            _previewInvoice = result.updatedInvoice;
+            
+            // Update the invoice in the last assistant message
+            for (int i = _messages.length - 1; i >= 0; i--) {
+              if (_messages[i]['type'] == 'assistant' && _messages[i]['invoice'] != null) {
+                _messages[i]['invoice'] = result.updatedInvoice;
+                break;
+              }
+            }
+            
+            // Add confirmation message
+            _messages.add({
+              'type': 'assistant',
+              'text': '✅ ${result.confirmationMessage}\n\nThe invoice preview has been updated above.',
+              'timestamp': DateTime.now(),
+            });
+            
+            _isProcessing = false;
+          });
+          
+          _scrollToBottom();
+        } else {
+          throw Exception(result.errorMessage ?? 'Unknown error');
+        }
+      }
+    } catch (e) {
+      print('DEBUG: Error in modification: $e');
+      if (mounted) {
+        setState(() {
+          // Remove loading message
+          _messages.removeWhere((msg) => msg['type'] == 'loading');
+          _messages.add({
+            'type': 'error',
+            'text': 'Could not apply modification: ${e.toString()}\n\nPlease try rephrasing your request, like:\n• "Change buyer name to Jane Doe"\n• "Update buyer TIN to C12345678901"\n• "Set tax to 50"',
+            'timestamp': DateTime.now(),
+          });
+          _isProcessing = false;
+        });
+        _scrollToBottom();
+      }
+    }
+  }
+
   /// Handle greeting messages with a friendly response
   Future<void> _handleGreeting() async {
     if (mounted) {
@@ -247,6 +313,11 @@ I can help you with:
    • From voice: "Create an invoice for ABC Corp"
    • From receipt: Attach a photo
 
+✏️ **Modify Invoices**
+   • "Change buyer name to Jane Doe"
+   • "Update buyer TIN to C12345678901"
+   • "Set tax to 50"
+
 📚 **Compliance Questions**
    • "What is LHDN compliance?"
    • "When is MyInvois mandatory?"
@@ -263,8 +334,8 @@ How can I assist you today?''',
   }
 
   /// Detect user intent using Gemini AI
-  /// Returns true if input is a compliance question, false if it's invoice creation
-  Future<bool> _detectUserIntent(String input) async {
+  /// Returns: 'compliance_question', 'invoice_creation', or 'invoice_modification'
+  Future<String> _detectUserIntent(String input, {bool hasExistingInvoice = false}) async {
     try {
       // Get API key
       final apiKey = dotenv.env['GEMINI_API_KEY'];
@@ -290,6 +361,17 @@ How can I assist you today?''',
         ],
       );
       
+      final modificationContext = hasExistingInvoice 
+          ? '\n- invoice_modification (requesting to modify/change/update an EXISTING invoice field)'
+          : '';
+      
+      final modificationExamples = hasExistingInvoice
+          ? '''
+- "Change buyer name to Jane Doe" → invoice_modification
+- "Update buyer TIN to C12345678901" → invoice_modification
+- "Set tax to 50" → invoice_modification'''
+          : '';
+      
       final prompt = '''
 Classify this user input into ONE category.
 
@@ -297,34 +379,46 @@ User input: "$input"
 
 Rules:
 - If CLEARLY asking about LHDN, MyInvois rules, tax, compliance, regulations, deadlines → respond: compliance_question
-- If CLEARLY requesting to create/generate/make an invoice with details → respond: invoice_creation
-- If unclear, ambiguous, or requesting clarification → respond: invoice_creation
+- If CLEARLY requesting to create/generate/make a NEW invoice with details → respond: invoice_creation$modificationContext
+- If unclear or ambiguous → respond: invoice_creation
 
 Examples:
 - "What is LHDN compliance deadline?" → compliance_question
 - "Create invoice for ABC Corp RM500" → invoice_creation
 - "Tell me about invoice rules" → compliance_question
-- "Invoice for client" → invoice_creation
-- "What should I know" → invoice_creation
+- "Invoice for client" → invoice_creation$modificationExamples
 
-Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
+Respond with ONLY ONE phrase: compliance_question OR invoice_creation${hasExistingInvoice ? ' OR invoice_modification' : ''}''';
 
       // Use generateContent with a list of Content objects
       final content = [Content.text(prompt)];
       final response = await model.generateContent(content);
       final classification = response.text?.trim().toLowerCase() ?? '';
       
-      print('DEBUG: AI Classification - Input: "$input", Result: "$classification"');
+      print('DEBUG: AI Classification - Input: "$input", Result: "$classification", HasInvoice: $hasExistingInvoice');
       
-      // Return true if it's a compliance question
-      if (classification.contains('compliance')) {
-        return true;
-      } else if (classification.contains('invoice')) {
-        return false;
+      // Return the detected intent
+      if (classification.contains('modification') && hasExistingInvoice) {
+        return 'invoice_modification';
+      } else if (classification.contains('compliance')) {
+        return 'compliance_question';
+      } else if (classification.contains('invoice') || classification.contains('creation')) {
+        return 'invoice_creation';
       } else {
         // Fallback: If AI response is unclear, use simple heuristic
         print('DEBUG: AI classification unclear, using fallback heuristic');
         final lower = input.toLowerCase();
+        
+        // Check for modification keywords if invoice exists
+        if (hasExistingInvoice) {
+          final modKeywords = ['change', 'update', 'modify', 'edit', 'set', 'fix', 'replace', 'correct'];
+          final fieldKeywords = ['buyer', 'seller', 'name', 'tin', 'email', 'phone', 'tax', 'total'];
+          if (modKeywords.any((k) => lower.contains(k)) && fieldKeywords.any((k) => lower.contains(k))) {
+            return 'invoice_modification';
+          }
+        }
+        
+        // Check for compliance question markers
         final hasQuestionMarker = lower.contains('?') || 
                                    lower.startsWith('what') || 
                                    lower.startsWith('how') || 
@@ -332,19 +426,22 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
                                    lower.startsWith('why') ||
                                    lower.contains('can i') ||
                                    lower.contains('should i');
-        final hasInvoiceAction = lower.contains('create') || 
-                                  lower.contains('generate') || 
-                                  lower.contains('make invoice');
-        return hasQuestionMarker && !hasInvoiceAction;
+        final hasComplianceKeyword = lower.contains('lhdn') || 
+                                       lower.contains('compliance') || 
+                                       lower.contains('tax') ||
+                                       lower.contains('myinvois');
+        
+        if (hasQuestionMarker && hasComplianceKeyword) {
+          return 'compliance_question';
+        }
+        
+        // Default to invoice creation
+        return 'invoice_creation';
       }
     } catch (e) {
       print('DEBUG: Error in AI classification: $e, using fallback');
-      // Fallback to simple keyword detection if AI fails
-      final lower = input.toLowerCase();
-      return lower.contains('?') || 
-             lower.contains('what') || 
-             lower.contains('how') ||
-             (lower.contains('lhdn') || lower.contains('compliance') || lower.contains('tax'));
+      // Fallback to invoice creation on error
+      return 'invoice_creation';
     }
   }
 
@@ -364,7 +461,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
           
           // Add sources
           if (complianceAnswer.sources.isNotEmpty) {
-            responseText.writeln('\n📚 **Sources:**');
+            responseText.writeln('\n📝 **Sources:**');
             for (var source in complianceAnswer.sources) {
               print('DEBUG UI: Rendering source: $source');
               responseText.writeln('  • $source');
@@ -373,7 +470,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
           
           // Add related topics
           if (complianceAnswer.relatedTopics.isNotEmpty) {
-            responseText.writeln('\n🔗 **Related Topics:**');
+            responseText.writeln('\n📚 **Related Topics:**');
             for (var topic in complianceAnswer.relatedTopics) {
               responseText.writeln('  • $topic');
             }
@@ -381,7 +478,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
           
           // Add confidence
           final confidence = (complianceAnswer.confidenceScore * 100).toStringAsFixed(0);
-          responseText.writeln('\n🎯 Confidence: $confidence%');
+          responseText.writeln('\n🎯 **Confidence**: $confidence%');
           
           _messages.add({
             'type': 'compliance',
@@ -929,9 +1026,8 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: isCompliance 
-                      ? [const Color(0xFF1A8B4A), const Color(0xFF2ECC71)]  // Green for compliance
-                      : [const Color(0xFF2E3193), const Color(0xFF0533F4)],  // Blue for invoice
+                  colors: 
+                      [const Color(0xFF2E3193), const Color(0xFF0533F4)],  // Blue for invoice
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -955,14 +1051,10 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
                           ? const Color(0xFF2E3193)
                           : isError
                           ? Colors.red[50]
-                          : isCompliance
-                          ? Colors.green[50]
                           : Colors.white,
                       border: !isUser && !isError
                           ? Border.all(
-                              color: isCompliance 
-                                  ? Colors.green[200]! 
-                                  : Colors.grey[300]!, 
+                              color:Colors.grey[300]!, 
                               width: 1,
                             )
                           : null,
@@ -993,7 +1085,7 @@ Respond with ONLY ONE phrase: compliance_question OR invoice_creation''';
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.green[700],
+                              color: Color(0xFF2E3193),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -1822,7 +1914,7 @@ class _LoadingMessageBubbleState extends State<_LoadingMessageBubble>
       animation: _dotCount,
       builder: (context, child) {
         return Text(
-          'Crafting Invoice${"." * (_dotCount.value + 1)}',
+          'Crafting Response${"." * (_dotCount.value + 1)}',
           style: const TextStyle(
             color: Colors.black87,
             fontSize: 14,

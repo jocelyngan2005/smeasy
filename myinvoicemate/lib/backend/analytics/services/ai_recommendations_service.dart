@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../firestore_collections.dart';
 import '../models/analytics_model.dart';
 
@@ -21,8 +23,8 @@ class AIRecommendationsService {
   final FirebaseFunctions _functions;
   
   // Gemini AI API configuration
-  static const String _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
-  static const String _geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
+  static String get _geminiApiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
+  static const String _geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
   // ---------------------------------------------------------------------------
   // AI Recommendations
@@ -417,6 +419,12 @@ Missing Buyer TIN: $missingTIN
   /// Call Gemini AI API directly
   Future<String?> _callGeminiAI(String businessContext) async {
     try {
+      // Check if API key is available
+      if (_geminiApiKey.isEmpty) {
+        print('❌ Gemini API key not found in .env file');
+        return null;
+      }
+      
       final response = await http.post(
         Uri.parse('$_geminiApiUrl?key=$_geminiApiKey'),
         headers: {
@@ -436,7 +444,7 @@ Missing Buyer TIN: $missingTIN
             'temperature': 0.7,
             'topP': 0.95,
             'topK': 64,
-            'maxOutputTokens': 2048,
+            'maxOutputTokens': 4096,
           },
         }),
       );
@@ -461,61 +469,459 @@ You are a business intelligence advisor for MyInvoisMate, specializing in Malays
 
 $businessContext
 
-Generate 5-7 personalized, actionable business recommendations. Focus on:
+Generate 5 personalized, actionable business recommendations. Focus on:
 1. MyInvois compliance risks and improvements
 2. Revenue optimization opportunities
 3. Customer retention strategies
 4. Cash flow management
 5. Operational efficiency
 
-IMPORTANT: Format your response as a JSON array with this exact structure:
+CRITICAL: Format your response EXACTLY as shown below. Return ONLY a valid JSON array:
 [
   {
-    "category": "Compliance|Revenue|Customers|Operations|Tax",
-    "priority": "High|Medium|Low",
-    "title": "Brief actionable title",
-    "description": "2-3 sentences explaining the insight and action",
-    "impact": "Expected business benefit"
+    "category": "Compliance",
+    "priority": "High",
+    "title": "Submit Overdue MyInvois Documents",
+    "description": "Review and submit pending invoices to avoid compliance penalties",
+    "impact": "Maintain regulatory compliance"
+  },
+  {
+    "category": "Revenue",
+    "priority": "Medium",
+    "title": "Optimize Payment Terms",
+    "description": "Implement early payment discounts to improve cash flow",
+    "impact": "Reduce payment delays by 20%"
+  },
+  {
+    "category": "Operations",
+    "priority": "Medium",
+    "title": "Automate Invoice Processing",
+    "description": "Implement automated invoice generation to reduce manual work",
+    "impact": "Save 5-10 hours per week"
+  },
+  {
+    "category": "Customers",
+    "priority": "Low",
+    "title": "Implement Customer Feedback System",
+    "description": "Set up regular customer satisfaction surveys",
+    "impact": "Improve customer retention by 15%"
+  },
+  {
+    "category": "Tax",
+    "priority": "Medium",
+    "title": "Review Tax Calculation Accuracy",
+    "description": "Audit recent invoices for correct tax amounts",
+    "impact": "Ensure tax compliance accuracy"
   }
 ]
 
-Return only the JSON array, no additional text.''';
+STRICT RULES:
+- Response must start with [ and end with ]
+- No markdown, no code blocks, no extra text
+- Each description must be 50-80 characters only
+- Category must be EXACTLY one of: Compliance, Revenue, Customers, Operations, Tax
+- Priority must be EXACTLY one of: High, Medium, Low
+- Generate exactly 5 recommendations
+- All fields are mandatory''';
   }
 
   /// Parse Gemini AI response into recommendations
   List<AIRecommendation> _parseGeminiRecommendations(String response) {
     try {
-      // Clean the response to extract JSON
-      String jsonStr = response.trim();
+      print('🔍 RAW GEMINI RESPONSE (full): $response');
+      print('🔍 Response length: ${response.length} characters');
       
-      // Remove markdown code blocks if present
-      if (jsonStr.startsWith('```json')) {
-        jsonStr = jsonStr.substring(7);
-      }
-      if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr.substring(3);
-      }
-      if (jsonStr.endsWith('```')) {
-        jsonStr = jsonStr.substring(0, jsonStr.length - 3);
+      // Try multiple parsing strategies
+      List<AIRecommendation> recommendations = [];
+      
+      // Strategy 1: Try to find and parse JSON array
+      print('🧪 Trying JSON array parsing...');
+      recommendations = _tryParseJsonArray(response);
+      if (recommendations.isNotEmpty) {
+        print('✅ JSON array parsing SUCCESS: ${recommendations.length} recommendations');
+        _debugRecommendations(recommendations);
+        return recommendations;
       }
       
-      final List<dynamic> jsonData = jsonDecode(jsonStr.trim());
+      // Strategy 2: Try to extract JSON from mixed content
+      print('🧪 Trying JSON extraction from text...');
+      recommendations = _tryExtractJsonFromText(response);
+      if (recommendations.isNotEmpty) {
+        print('✅ JSON extraction SUCCESS: ${recommendations.length} recommendations');
+        _debugRecommendations(recommendations);
+        return recommendations;
+      }
       
-      return jsonData.map((item) {
-        final Map<String, dynamic> data = Map<String, dynamic>.from(item);
-        return AIRecommendation(
-          category: data['category'] ?? 'Operations',
-          priority: data['priority'] ?? 'Medium',
-          title: data['title'] ?? 'Business Improvement',
-          description: data['description'] ?? 'Review your business operations.',
-          impact: data['impact'] ?? 'Improve efficiency',
-          timestamp: DateTime.now(),
-        );
-      }).toList();
+      // Strategy 3: Parse structured text format
+      print('🧪 Trying structured text parsing...');
+      recommendations = _tryParseStructuredText(response);
+      if (recommendations.isNotEmpty) {
+        print('✅ Structured text parsing SUCCESS: ${recommendations.length} recommendations');
+        _debugRecommendations(recommendations);
+        return recommendations;
+      }
+      
+      print('⚠️ ALL parsing strategies FAILED, using static fallback');
+      return _getStaticFallbackRecommendations();
+      
     } catch (e) {
-      print('Error parsing Gemini response: $e');
+      print('❌ Error parsing Gemini response: $e');
       return _getStaticFallbackRecommendations();
     }
+  }
+  
+  /// Debug helper to print recommendation details
+  void _debugRecommendations(List<AIRecommendation> recommendations) {
+    print('🔍 DEBUG: Parsed recommendations:');
+    for (int i = 0; i < recommendations.length; i++) {
+      final rec = recommendations[i];
+      print('  [$i] Category: "${rec.category}"');
+      print('  [$i] Priority: "${rec.priority}"');
+      print('  [$i] Title: "${rec.title}"');
+      print('  [$i] Description: "${rec.description}"');
+      print('  [$i] Impact: "${rec.impact}"');
+      print('  ---');
+    }
+  }
+
+  /// Try to parse response as JSON array
+  List<AIRecommendation> _tryParseJsonArray(String response) {
+    try {
+      String jsonStr = response.trim();
+      
+      // Remove any markdown code blocks
+      jsonStr = jsonStr.replaceAll(RegExp(r'```[a-zA-Z]*'), '');
+      jsonStr = jsonStr.replaceAll('```', '');
+      
+      // Find the JSON array bounds
+      int startIndex = jsonStr.indexOf('[');
+      int endIndex = jsonStr.lastIndexOf(']');
+      
+      if (startIndex >= 0 && endIndex > startIndex) {
+        jsonStr = jsonStr.substring(startIndex, endIndex + 1);
+      }
+      
+      // Clean the JSON more aggressively
+      jsonStr = _cleanJsonString(jsonStr);
+      
+      print('🔧 Cleaned JSON: ${jsonStr.length > 300 ? jsonStr.substring(0, 300) + '...' : jsonStr}');
+      
+      final List<dynamic> jsonData = jsonDecode(jsonStr);
+      
+      if (jsonData.isEmpty) {
+        print('⚠️ Empty JSON array received');
+        return [];
+      }
+      
+      print('🔍 Decoded ${jsonData.length} JSON items');
+      
+      return jsonData.map((item) {
+        if (item is! Map) {
+          print('⚠️ Invalid recommendation item: $item');
+          return null;
+        }
+        
+        final Map<String, dynamic> data = Map<String, dynamic>.from(item);
+        print('🔍 Processing JSON item: $data');
+        
+        // Extract and validate fields
+        final rawCategory = data['category']?.toString() ?? '';
+        final rawPriority = data['priority']?.toString() ?? '';
+        final rawTitle = data['title']?.toString() ?? '';
+        final rawDescription = data['description']?.toString() ?? '';
+        final rawImpact = data['impact']?.toString() ?? '';
+        
+        print('🔍 Raw fields - Category: "$rawCategory", Priority: "$rawPriority", Title: "$rawTitle"');
+        print('🔍 Raw description: "$rawDescription"');
+        print('🔍 Raw impact: "$rawImpact"');
+        
+        // Set defaults for missing fields
+        final category = rawCategory.isEmpty ? 'Operations' : rawCategory;
+        final priority = rawPriority.isEmpty ? 'Medium' : rawPriority;
+        final title = rawTitle.isEmpty ? 'Business Recommendation ${DateTime.now().millisecondsSinceEpoch}' : rawTitle;
+        final description = rawDescription.isEmpty ? 'Review your business operations for improvements.' : rawDescription;
+        final impact = rawImpact.isEmpty ? 'Improve business efficiency' : rawImpact;
+        
+        final cleanedRecommendation = AIRecommendation(
+          category: _validateCategory(category),
+          priority: _validatePriority(priority),
+          title: _cleanText(title),
+          description: _cleanText(description),
+          impact: _cleanText(impact),
+          timestamp: DateTime.now(),
+        );
+        
+        print('🔍 Created recommendation: Title="${cleanedRecommendation.title}", Description="${cleanedRecommendation.description}"');
+        return cleanedRecommendation;
+      }).where((rec) => rec != null).cast<AIRecommendation>().toList();
+    } catch (e) {
+      print('❌ JSON array parsing failed: $e');
+      return [];
+    }
+  }
+  
+  /// Clean JSON string for better parsing
+  String _cleanJsonString(String jsonStr) {
+    // Remove any non-JSON content before/after array
+    jsonStr = jsonStr.trim();
+    
+    // Fix common JSON issues
+    jsonStr = jsonStr.replaceAll(RegExp(r'[\u201C\u201D]'), '"'); // Smart quotes
+    jsonStr = jsonStr.replaceAll(RegExp(r'[\u2018\u2019]'), "'"); // Smart quotes
+    jsonStr = jsonStr.replaceAll(RegExp(r',\s*([}\]])'), r'$1'); // Trailing commas
+    
+    // Escape unescaped quotes in strings
+    jsonStr = jsonStr.replaceAllMapped(
+      RegExp(r'"([^"]*?)"'), 
+      (match) {
+        String content = match.group(1) ?? '';
+        // Don't escape field names (they shouldn't have quotes inside)
+        if (content.contains(':') || ['category', 'priority', 'title', 'description', 'impact'].contains(content)) {
+          return match.group(0)!;
+        }
+        // Escape any internal quotes
+        content = content.replaceAll('"', '\\"');
+        return '"$content"';
+      }
+    );
+    
+    return jsonStr;
+  }
+  
+  /// Validate category field
+  String _validateCategory(String category) {
+    const validCategories = ['Compliance', 'Revenue', 'Customers', 'Operations', 'Tax'];
+    for (String valid in validCategories) {
+      if (category.toLowerCase().contains(valid.toLowerCase())) {
+        return valid;
+      }
+    }
+    return 'Operations';
+  }
+  
+  /// Validate priority field
+  String _validatePriority(String priority) {
+    const validPriorities = ['High', 'Medium', 'Low'];
+    for (String valid in validPriorities) {
+      if (priority.toLowerCase().contains(valid.toLowerCase())) {
+        return valid;
+      }
+    }
+    return 'Medium';
+  }
+  
+  /// Clean text content
+  String _cleanText(String text) {
+    return text
+        .trim()
+        .replaceAll(RegExp(r'[\n\r\t]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'[^\w\s.,!?()-]'), '')
+        .trim();
+  }
+
+  /// Try to extract JSON from mixed content
+  List<AIRecommendation> _tryExtractJsonFromText(String response) {
+    try {
+      // Look for JSON array pattern in the text with more flexible matching
+      List<RegExp> patterns = [
+        RegExp(r'\[([\s\S]*?)\]', multiLine: true), // Basic array
+        RegExp(r'```json\s*\[([\s\S]*?)\]\s*```', multiLine: true), // Markdown wrapped
+        RegExp(r'```\s*\[([\s\S]*?)\]\s*```', multiLine: true), // Generic code block
+      ];
+      
+      for (RegExp pattern in patterns) {
+        final match = pattern.firstMatch(response);
+        if (match != null) {
+          String jsonStr = match.group(0)!;
+          if (jsonStr.startsWith('```')) {
+            jsonStr = jsonStr.replaceAll(RegExp(r'```[a-zA-Z]*'), '').replaceAll('```', '');
+          }
+          
+          // Try to reconstruct valid JSON if it's broken
+          jsonStr = _reconstructBrokenJson(jsonStr.trim());
+          jsonStr = _cleanJsonString(jsonStr);
+          
+          try {
+            final List<dynamic> jsonData = jsonDecode(jsonStr);
+            return jsonData.map((item) {
+              if (item is! Map) return null;
+              
+              final Map<String, dynamic> data = Map<String, dynamic>.from(item);
+              return AIRecommendation(
+                category: _validateCategory(data['category']?.toString() ?? 'Operations'),
+                priority: _validatePriority(data['priority']?.toString() ?? 'Medium'),
+                title: _cleanText(data['title']?.toString() ?? 'Business Improvement'),
+                description: _cleanText(data['description']?.toString() ?? 'Review your business operations.'),
+                impact: _cleanText(data['impact']?.toString() ?? 'Improve efficiency'),
+                timestamp: DateTime.now(),
+              );
+            }).where((rec) => rec != null).cast<AIRecommendation>().toList();
+          } catch (e) {
+            print('Failed to parse extracted JSON: $e');
+            continue;
+          }
+        }
+      }
+      
+      return [];
+    } catch (e) {
+      print('JSON extraction failed: $e');
+      return [];
+    }
+  }
+  
+  /// Try to reconstruct broken JSON by closing incomplete objects
+  String _reconstructBrokenJson(String jsonStr) {
+    try {
+      // If JSON is incomplete, try to close it properly
+      jsonStr = jsonStr.trim();
+      
+      // Count open/close structures
+      int openBraces = '{'.allMatches(jsonStr).length;
+      int closeBraces = '}'.allMatches(jsonStr).length;
+      int openBrackets = '['.allMatches(jsonStr).length;
+      int closeBrackets = ']'.allMatches(jsonStr).length;
+      
+      // Remove any trailing incomplete content after the last complete object
+      if (openBraces > closeBraces) {
+        // Find the last complete object by looking for the last proper closing brace
+        int lastValidBrace = jsonStr.lastIndexOf('}');
+        if (lastValidBrace > 0) {
+          // Check if there's incomplete content after this
+          String afterLastBrace = jsonStr.substring(lastValidBrace + 1).trim();
+          if (afterLastBrace.startsWith(',')) {
+            afterLastBrace = afterLastBrace.substring(1).trim();
+          }
+          
+          // If there's an incomplete object, remove it
+          if (afterLastBrace.startsWith('{') && !afterLastBrace.endsWith('}')) {
+            jsonStr = jsonStr.substring(0, lastValidBrace + 1);
+          }
+        }
+      }
+      
+      // Ensure proper array closure
+      if (!jsonStr.endsWith(']') && openBrackets > closeBrackets) {
+        jsonStr += ']';
+      }
+      
+      print('🔧 Reconstructed JSON: ${jsonStr.length > 200 ? jsonStr.substring(0, 200) + '...' : jsonStr}');
+      return jsonStr;
+    } catch (e) {
+      print('❌ Error reconstructing JSON: $e');
+      return jsonStr;
+    }
+  }
+
+  /// Parse structured text when JSON fails
+  List<AIRecommendation> _tryParseStructuredText(String response) {
+    try {
+      List<AIRecommendation> recommendations = [];
+      
+      print('🔍 Parsing structured text from: ${response.substring(0, math.min(200, response.length))}...');
+      
+      // Try to extract individual recommendations from the text
+      // Look for patterns like "category": "...", "priority": "...", etc.
+      RegExp recPattern = RegExp(
+        r'"category"\s*:\s*"([^"]+)"[^}]*"priority"\s*:\s*"([^"]+)"[^}]*"title"\s*:\s*"([^"]+)"[^}]*"description"\s*:\s*"([^"]+)"[^}]*"impact"\s*:\s*"([^"]+)"',
+        caseSensitive: false,
+        multiLine: true,
+      );
+      
+      Iterable<RegExpMatch> matches = recPattern.allMatches(response);
+      print('🔍 Found ${matches.length} recommendation patterns in text');
+      
+      for (RegExpMatch match in matches) {
+        try {
+          String category = match.group(1)?.trim() ?? 'Operations';
+          String priority = match.group(2)?.trim() ?? 'Medium';
+          String title = match.group(3)?.trim() ?? 'Business Recommendation';
+          String description = match.group(4)?.trim() ?? 'Review business operations';
+          String impact = match.group(5)?.trim() ?? 'Improve efficiency';
+          
+          print('🔍 Extracted - Title: "$title", Category: "$category"');
+          
+          recommendations.add(AIRecommendation(
+            category: _validateCategory(category),
+            priority: _validatePriority(priority),
+            title: _cleanText(title),
+            description: _cleanText(description),
+            impact: _cleanText(impact),
+            timestamp: DateTime.now(),
+          ));
+        } catch (e) {
+          print('❌ Error parsing individual recommendation: $e');
+        }
+      }
+      
+      // If regex approach failed, try simpler line-by-line approach
+      if (recommendations.isEmpty) {
+        print('🔍 Regex failed, trying line-by-line parsing...');
+        recommendations = _trySimpleTextParsing(response);
+      }
+      
+      return recommendations;
+    } catch (e) {
+      print('❌ Structured text parsing failed: $e');
+      return [];
+    }
+  }
+  
+  /// Simple text parsing fallback
+  List<AIRecommendation> _trySimpleTextParsing(String response) {
+    List<AIRecommendation> recommendations = [];
+    
+    // Split by common delimiters and look for recommendation-like content
+    List<String> lines = response.split(RegExp(r'[\n,}]'));
+    
+    String? currentCategory, currentPriority, currentTitle, currentDescription, currentImpact;
+    
+    for (String line in lines) {
+      line = line.trim().replaceAll(RegExp(r'^[\[{"\s]*'), '').replaceAll(RegExp(r'[}\]"\s]*$'), '');
+      
+      if (line.isEmpty) continue;
+      
+      if (line.toLowerCase().contains('category')) {
+        currentCategory = _extractValue(line);
+      } else if (line.toLowerCase().contains('priority')) {
+        currentPriority = _extractValue(line);
+      } else if (line.toLowerCase().contains('title')) {
+        currentTitle = _extractValue(line);
+      } else if (line.toLowerCase().contains('description')) {
+        currentDescription = _extractValue(line);
+      } else if (line.toLowerCase().contains('impact')) {
+        currentImpact = _extractValue(line);
+        
+        // Complete recommendation found
+        if (currentTitle != null && currentTitle.isNotEmpty) {
+          recommendations.add(AIRecommendation(
+            category: _validateCategory(currentCategory ?? 'Operations'),
+            priority: _validatePriority(currentPriority ?? 'Medium'),
+            title: _cleanText(currentTitle),
+            description: _cleanText(currentDescription ?? 'Review and optimize business operations'),
+            impact: _cleanText(currentImpact),
+            timestamp: DateTime.now(),
+          ));
+          
+          print('🔍 Built recommendation: "$currentTitle"');
+          
+          // Reset for next recommendation
+          currentCategory = currentPriority = currentTitle = currentDescription = currentImpact = null;
+        }
+      }
+    }
+    
+    return recommendations;
+  }
+  
+  /// Extract value from key-value line
+  String _extractValue(String line) {
+    // Remove field name and extract value
+    if (line.contains(':')) {
+      return line.split(':').skip(1).join(':').trim().replaceAll(RegExp(r'^["\s]*|["\s,]*$'), '');
+    }
+    return line;
   }
 
   /// Final static fallback if all AI methods fail
