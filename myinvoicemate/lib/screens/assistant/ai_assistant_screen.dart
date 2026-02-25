@@ -205,13 +205,14 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     // Add user message to chat
     final userMessage = _textController.text;
     final attachedImage = _imageFile;
+    final attachedPDF = _pdfFile;  // Capture PDF before clearing state
 
     setState(() {
       _messages.add({
         'type': 'user',
         'text': userMessage,
         'image': attachedImage,
-        'pdf': _pdfFile,
+        'pdf': attachedPDF,
         'pdfName': _pdfFileName,
         'timestamp': DateTime.now(),
       });
@@ -255,18 +256,18 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         }
       });
       
-      if (intent == 'customer_creation' && attachedImage == null && _pdfFile == null) {
+      if (intent == 'customer_creation' && attachedImage == null && attachedPDF == null) {
         // Handle customer creation
         await _handleCustomerCreation(userMessage);
-      } else if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null && _pdfFile == null) {
+      } else if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null && attachedPDF == null) {
         // Handle invoice modification
         await _handleInvoiceModification(userMessage);
-      } else if (intent == 'compliance_question' && attachedImage == null && _pdfFile == null) {
+      } else if (intent == 'compliance_question' && attachedImage == null && attachedPDF == null) {
         // Handle compliance question with Knowledge Assistant
         await _handleComplianceQuestion(userMessage);
       } else {
         // Handle invoice generation
-        await _handleInvoiceGeneration(userMessage, attachedImage, _pdfFile);
+        await _handleInvoiceGeneration(userMessage, attachedImage, attachedPDF);
       }
     } catch (e) {
       if (mounted) {
@@ -705,6 +706,11 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
 
   /// Handle invoice generation using Invoice Orchestrator
   Future<void> _handleInvoiceGeneration(String userMessage, File? attachedImage, File? attachedPDF) async {
+    print('DEBUG UI: _handleInvoiceGeneration called');
+    print('DEBUG UI: userMessage: $userMessage');
+    print('DEBUG UI: attachedImage: ${attachedImage?.path}');
+    print('DEBUG UI: attachedPDF: ${attachedPDF?.path}');
+    
     try {
       InvoiceGenerationResult result;
       
@@ -712,18 +718,22 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
       if (attachedPDF != null) {
         // PDF document processing with Gemini Vision
         // Gemini automatically detects PDF MIME type and extracts data
+        print('DEBUG UI: Processing PDF file: ${attachedPDF.path}');
         result = await _orchestrator.generateFromReceiptFile(
           imageFile: attachedPDF,
           userId: 'user123', // TODO: Replace with actual user ID from auth
           saveDraft: false, // Disable Firestore for testing
         );
+        print('DEBUG UI: PDF processing completed');
       } else if (attachedImage != null) {
         // Receipt scanning with Gemini Vision
+        print('DEBUG UI: Processing image file: ${attachedImage.path}');
         result = await _orchestrator.generateFromReceiptFile(
           imageFile: attachedImage,
           userId: 'user123', // TODO: Replace with actual user ID from auth
           saveDraft: false, // Disable Firestore for testing
         );
+        print('DEBUG UI: Image processing completed');
       } else {
         // Voice/text input with Gemini AI
         result = await _orchestrator.generateFromVoiceOrText(

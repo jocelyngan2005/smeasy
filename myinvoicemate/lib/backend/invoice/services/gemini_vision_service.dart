@@ -16,33 +16,51 @@ class GeminiVisionReceiptService {
   GeminiVisionReceiptService()
       : _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '',
         _visionModel = GenerativeModel(
-          model: 'gemini-2.5-flash',
+          model: 'gemini-2.5-flash-lite',
           apiKey: dotenv.env['GEMINI_API_KEY'] ?? '',
         ) {
     if (_apiKey.isEmpty) {
       throw Exception('GEMINI_API_KEY not found in .env file');
     }
+    print('DEBUG GeminiVision: Service initialized with model: gemini-1.5-flash');
   }
 
   /// Scan receipt image and extract invoice information
   Future<InvoiceDraft> scanReceipt({
     required File imageFile,
   }) async {
+    print('DEBUG GeminiVision: ========== SCAN RECEIPT CALLED ==========');
+    print('DEBUG GeminiVision: File path: ${imageFile.path}');
+    
     try {
+      // Check if file exists
+      final exists = await imageFile.exists();
+      print('DEBUG GeminiVision: File exists: $exists');
+      
+      if (!exists) {
+        throw Exception('File does not exist: ${imageFile.path}');
+      }
+      
       // Read image bytes
+      print('DEBUG GeminiVision: Reading file bytes...');
       final imageBytes = await imageFile.readAsBytes();
+      print('DEBUG GeminiVision: File size: ${imageBytes.length} bytes');
       
       // Determine MIME type based on file extension
       final String mimeType = _getMimeTypeFromFile(imageFile);
-      print('DEBUG GeminiVision: Processing file with MIME type: $mimeType, path: ${imageFile.path}');
+      print('DEBUG GeminiVision: Detected MIME type: $mimeType');
       
       // Create image/document part for Gemini
+      print('DEBUG GeminiVision: Creating DataPart with MIME type: $mimeType');
       final imagePart = DataPart(mimeType, imageBytes);
       
       // Build prompt for receipt extraction
+      print('DEBUG GeminiVision: Building extraction prompt...');
       final prompt = _buildReceiptExtractionPrompt();
+      print('DEBUG GeminiVision: Prompt length: ${prompt.length} chars');
       
       // Call Gemini Vision API
+      print('DEBUG GeminiVision: Calling Gemini API...');
       final response = await _visionModel.generateContent([
         Content.multi([
           TextPart(prompt),
@@ -50,12 +68,15 @@ class GeminiVisionReceiptService {
         ])
       ]);
 
+      print('DEBUG GeminiVision: Response received!');
+      
       if (response.text == null || response.text!.isEmpty) {
+        print('DEBUG GeminiVision: ERROR - Response is null or empty');
         throw Exception('No response from Gemini Vision');
       }
 
-      print('DEBUG GeminiVision: Received response from Gemini (${response.text!.length} chars)');
-      print('DEBUG GeminiVision: Raw response: ${response.text!.substring(0, response.text!.length > 500 ? 500 : response.text!.length)}...');
+      print('DEBUG GeminiVision: Response length: ${response.text!.length} chars');
+      print('DEBUG GeminiVision: First 500 chars: ${response.text!.substring(0, response.text!.length > 500 ? 500 : response.text!.length)}');
       
       // Parse response
       final jsonResponse = _extractJsonFromResponse(response.text!);
@@ -74,9 +95,12 @@ class GeminiVisionReceiptService {
       // Create invoice draft
       final draft = _createDraftFromReceiptData(parsedData);
       
+      print('DEBUG GeminiVision: Successfully created draft!');
       return draft;
-    } catch (e) {
-      print('DEBUG GeminiVision: Error scanning receipt - $e');
+    } catch (e, stackTrace) {
+      print('DEBUG GeminiVision: ========== ERROR ==========');
+      print('DEBUG GeminiVision: Error: $e');
+      print('DEBUG GeminiVision: Stack trace: $stackTrace');
       throw Exception('Failed to scan receipt: $e');
     }
   }
