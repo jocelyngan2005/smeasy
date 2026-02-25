@@ -487,7 +487,7 @@ I can help you with:
 
 📋 **Create Invoices**
    • From voice: "Create an invoice for ABC Corp"
-   • From receipt: Attach a photo
+   • From receipt: Attach a photo or PDF
 
 ✏️ **Modify Invoices**
    • "Change buyer name to Jane Doe"
