@@ -352,7 +352,7 @@ class _AlertCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
+            border: alert.isRead ? null : Border.all(color: Colors.grey.shade200),
             boxShadow: alert.isRead
                 ? null
                 : [

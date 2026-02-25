@@ -70,6 +70,56 @@ class InvoiceStatusCount {
   }
 }
 
+/// Aggregate SST / tax data computed from invoices.
+class TaxSummaryData {
+  /// Sum of subtotals for invoices that have a taxable amount > 0.
+  final double totalTaxableSales;
+
+  /// Sum of taxAmount across all invoices in the selected period.
+  final double totalTaxCollected;
+
+  /// Estimated tax payable to the authority (simplified: equals tax collected).
+  final double estimatedTaxPayable;
+
+  /// Count of invoices that are audit-ready (submitted/valid with a
+  /// MyInvois reference ID).
+  final int auditReadyCount;
+
+  /// Month-by-month breakdown for reporting / export.
+  final List<MonthlyTaxEntry> monthlyBreakdown;
+
+  const TaxSummaryData({
+    required this.totalTaxableSales,
+    required this.totalTaxCollected,
+    required this.estimatedTaxPayable,
+    required this.auditReadyCount,
+    required this.monthlyBreakdown,
+  });
+
+  factory TaxSummaryData.empty() => const TaxSummaryData(
+        totalTaxableSales: 0,
+        totalTaxCollected: 0,
+        estimatedTaxPayable: 0,
+        auditReadyCount: 0,
+        monthlyBreakdown: [],
+      );
+}
+
+/// Tax data for a single calendar month.
+class MonthlyTaxEntry {
+  final String month;
+  final double taxableSales;
+  final double taxCollected;
+  final int invoiceCount;
+
+  const MonthlyTaxEntry({
+    required this.month,
+    required this.taxableSales,
+    required this.taxCollected,
+    required this.invoiceCount,
+  });
+}
+
 /// AI-generated recommendation for business optimization.
 class AIRecommendation {
   final String category; // Compliance, Revenue, Customers, Operations, Tax

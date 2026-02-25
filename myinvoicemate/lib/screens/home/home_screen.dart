@@ -1,7 +1,11 @@
+﻿import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:printing/printing.dart';
 import '../../backend/auth/services/auth_service.dart';
 import '../../backend/compliance/services/compliance_service.dart';
 import '../../backend/invoice/services/firestore_invoice_service.dart';
@@ -11,8 +15,42 @@ import '../../backend/analytics/services/bigquery_service.dart';
 import '../../backend/analytics/services/looker_studio_helper.dart';
 import '../../backend/analytics/models/analytics_model.dart';
 import '../../utils/constants.dart';
+import '../../utils/financial_report_builder.dart';
 import '../../utils/helpers.dart';
 import '../notifications/notification_screen.dart';
+
+// ── Background isolate support for PDF generation ─────────────────────────────
+/// Bundle of parameters sent across the isolate boundary.
+class _ReportParams {
+  final String businessName;
+  final String period;
+  final double complianceScore;
+  final AnalyticsData? analytics;
+  final TaxSummaryData tax;
+  final List<AIRecommendation> recommendations;
+
+  const _ReportParams({
+    required this.businessName,
+    required this.period,
+    required this.complianceScore,
+    required this.analytics,
+    required this.tax,
+    required this.recommendations,
+  });
+}
+
+/// Top-level function required by [compute] – runs in a background isolate.
+Future<Uint8List> _buildReportInBackground(_ReportParams p) async {
+  final bytes = await FinancialReportBuilder.buildAndSave(
+    businessName: p.businessName,
+    period: p.period,
+    complianceScore: p.complianceScore,
+    analytics: p.analytics,
+    tax: p.tax,
+    recommendations: p.recommendations,
+  );
+  return Uint8List.fromList(bytes);
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,10 +67,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final _bigQueryService = BigQueryService();
   bool _isLoading = true;
   bool _isExportingToBigQuery = false;
+  bool _isExportingTaxPdf = false;
+  bool _showAllRecommendations = false;
   int _pendingInvoices = 0;
   int _totalInvoices = 0;
   double _complianceScore = 0;
   AnalyticsData? _analyticsData;
+  TaxSummaryData? _taxSummaryData;
   int _touchedIndex = -1;
   List<AIRecommendation> _aiRecommendations = [];
 
@@ -62,6 +103,10 @@ class _HomeScreenState extends State<HomeScreen> {
         userId,
         months: _periodOptions[_selectedPeriod]!,
       );
+      final taxSummary = await _analyticsService.getTaxSummary(
+        userId,
+        months: _periodOptions[_selectedPeriod]!,
+      );
       final aiRecommendations = await _aiRecommendationsService.getCachedRecommendations(userId);
 
       setState(() {
@@ -69,6 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _totalInvoices = invoices.length;
         _complianceScore = stats.complianceScore;
         _analyticsData = analytics;
+        _taxSummaryData = taxSummary;
         _aiRecommendations = aiRecommendations;
         _isLoading = false;
       });
@@ -145,6 +191,45 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _exportMonthlySummaryAsPdf() async {
+    setState(() => _isExportingTaxPdf = true);
+    try {
+      final authService = context.read<AuthService>();
+      final businessName = authService.currentUser?.businessName ?? 'Business';
+
+      // Build + serialise the PDF in a background isolate so the UI thread
+      // stays free and avoids the "Reported frame time is older" jitter.
+      final bytes = await compute(
+        _buildReportInBackground,
+        _ReportParams(
+          businessName: businessName,
+          period: _selectedPeriod,
+          complianceScore: _complianceScore,
+          analytics: _analyticsData,
+          tax: _taxSummaryData ?? TaxSummaryData.empty(),
+          recommendations: _aiRecommendations,
+        ),
+      );
+
+      await Printing.layoutPdf(
+        onLayout: (_) async => bytes,
+        name: 'financial_report_$_selectedPeriod.pdf',
+      );
+    } catch (e, st) {
+      debugPrint('Financial report export error: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingTaxPdf = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
@@ -216,6 +301,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildStatusChart(),
                 const SizedBox(height: 24),
 
+                // Tax Summary
+                if (_taxSummaryData != null) ...[
+                  _buildSectionTitle('Tax Summary'),
+                  const SizedBox(height: 12),
+                  _buildTaxSummaryCard(),
+                  const SizedBox(height: 24),
+                ],
+
+                // Top Customers
+                _buildSectionTitle('Top Customers'),
+                const SizedBox(height: 12),
+                _buildTopCustomers(),
+                const SizedBox(height: 24),
+
                 // AI Recommendations
                 if (_aiRecommendations.isNotEmpty) ...[
                   _buildAIRecommendationsCard(),
@@ -224,12 +323,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 // Analytics Actions
                 _buildAnalyticsActionsCard(),
-                const SizedBox(height: 24),
-
-                // Top Customers
-                _buildSectionTitle('Top Customers'),
-                const SizedBox(height: 12),
-                _buildTopCustomers(),
               ],
             ],
           ),
@@ -766,7 +859,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildAIRecommendationsCard() {
+    final visible = _showAllRecommendations
+        ? _aiRecommendations
+        : _aiRecommendations.take(2).toList();
+    final extra = _aiRecommendations.length - 2;
     return Card(
+      color: Colors.white,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -779,45 +877,54 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Row(
               children: [
-                const Icon(
-                  Icons.psychology,
-                  color: Color(0xFF2E3193),
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
                 const Text(
                   'AI Recommendations',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF2E3193),
+                    color: Colors.black,
                   ),
                 ),
-                Spacer(), 
+                const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.refresh, color: Color(0xFF2E3193)),
                   onPressed: _refreshAIRecommendations,
-                ),          
+                ),
               ],
             ),
-            const SizedBox(height: 20),
-            ..._aiRecommendations.take(5).map((rec) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8F9FF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Color(rec.priorityColor).withOpacity(0.3),
-                    width: 2,
-                  ),
-                ),
-                child: Column(
+            const SizedBox(height: 8),
+            ...visible.asMap().entries.map((entry) {
+              final i = entry.key;
+              final rec = entry.value;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (i != 0) const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        Row(
+                          children: [
+                        Text(
+                          rec.categoryIcon,
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          rec.category,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                          ],
+                        ),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
@@ -836,20 +943,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          rec.categoryIcon,
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          rec.category,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -858,7 +951,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF2E3193),
+                        color: Colors.black,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -906,8 +999,41 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ],
                 ),
+                  ),
+                ],
               );
             }).toList(),
+            if (_aiRecommendations.length > 2)
+              GestureDetector(
+                onTap: () =>
+                    setState(() => _showAllRecommendations = !_showAllRecommendations),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _showAllRecommendations
+                            ? 'Show less'
+                            : 'View more ($extra more)',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF2E3193),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        _showAllRecommendations
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        size: 18,
+                        color: const Color(0xFF2E3193),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -931,10 +1057,19 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF2E3193),
+                color: Colors.black,
               ),
             ),
             const SizedBox(height: 16),
+            _buildActionButton(
+              icon: Icons.picture_as_pdf,
+              title: 'Export Financial Report',
+              description: 'Full report: revenue, tax, customers & insights',
+              color: const Color(0xFF2E3193),
+              isLoading: _isExportingTaxPdf,
+              onTap: _exportMonthlySummaryAsPdf,
+            ),
+            const SizedBox(height: 12),
             _buildActionButton(
               icon: Icons.cloud_upload,
               title: 'Export to BigQuery',
@@ -957,6 +1092,67 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildTaxSummaryCard() {
+    final tax = _taxSummaryData!;
+    return Card(
+      color: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _summaryKpi('Taxable Sales', Helpers.formatCurrency(tax.totalTaxableSales)),
+                const SizedBox(width: 12),
+                _summaryKpi('Tax Collected', Helpers.formatCurrency(tax.totalTaxCollected)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _summaryKpi('Est. Tax Payable', Helpers.formatCurrency(tax.estimatedTaxPayable)),
+                const SizedBox(width: 12),
+                _summaryKpi('Audit-Ready', '${tax.auditReadyCount} invoices'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryKpi(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildActionButton({
     required IconData icon,
     required String title,
@@ -971,22 +1167,22 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: color.withOpacity(0.3),
-            width: 1,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.2),
+                color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: color, size: 24),
+              child: Icon(icon, color: Colors.white, size: 24),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -995,10 +1191,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     title,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
-                      color: color,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -1006,7 +1202,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     description,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.grey[600],
+                      color: Colors.white.withOpacity(0.85),
                     ),
                   ),
                 ],
@@ -1016,12 +1212,15 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
               )
             else
-              Icon(
+              const Icon(
                 Icons.arrow_forward_ios,
-                color: color,
+                color: Colors.white,
                 size: 16,
               ),
           ],

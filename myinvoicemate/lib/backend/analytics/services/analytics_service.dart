@@ -65,6 +65,83 @@ class AnalyticsService {
   // Derived queries
   // ---------------------------------------------------------------------------
 
+  /// Compute SST/tax summary for [userId] across the last [months] months.
+  ///
+  /// Returns a [TaxSummaryData] with taxable sales, tax collected,
+  /// estimated payable, audit-ready invoice count, and a per-month breakdown.
+  Future<TaxSummaryData> getTaxSummary(String userId, {int months = 6}) async {
+    final now = DateTime.now();
+    final cutoff = DateTime(now.year, now.month - months + 1, 1);
+
+    final snap = await _db
+        .collection(FirestoreCollections.invoices)
+        .where('createdBy', isEqualTo: userId)
+        .where('isDeleted', isEqualTo: false)
+        .where('issueDate',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff))
+        .get();
+
+    double totalTaxableSales = 0;
+    double totalTaxCollected = 0;
+    int auditReadyCount = 0;
+    final Map<String, _MutableMonthlyTax> monthlyMap = {};
+
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      final taxAmt = ((data['taxAmount'] as num?) ?? 0).toDouble();
+      final sub = ((data['subtotal'] as num?) ?? 0).toDouble();
+      final status = data['complianceStatus'] as String? ?? 'draft';
+      final refId = data['myInvoisReferenceId'] as String?;
+
+      if (taxAmt > 0) {
+        totalTaxableSales += sub;
+        totalTaxCollected += taxAmt;
+      }
+
+      if ((status == 'submitted' || status == 'valid' || status == 'accepted') &&
+          refId != null &&
+          refId.isNotEmpty) {
+        auditReadyCount++;
+      }
+
+      final issuedTs = data['issueDate'];
+      if (issuedTs is Timestamp) {
+        final dt = issuedTs.toDate();
+        final key = '${_monthName(dt.month)} ${dt.year}';
+        final entry = monthlyMap.putIfAbsent(key, _MutableMonthlyTax.new);
+        if (taxAmt > 0) entry.taxableSales += sub;
+        entry.taxCollected += taxAmt;
+        entry.invoiceCount++;
+      }
+    }
+
+    // Build ordered list for the last [months] calendar months.
+    final trendKeys = List.generate(months, (i) {
+      final dt = DateTime(now.year, now.month - i, 1);
+      return '${_monthName(dt.month)} ${dt.year}';
+    }).reversed.toList();
+
+    final monthlyBreakdown = trendKeys.map((k) {
+      final m = monthlyMap[k];
+      return MonthlyTaxEntry(
+        month: k,
+        taxableSales: m?.taxableSales ?? 0,
+        taxCollected: m?.taxCollected ?? 0,
+        invoiceCount: m?.invoiceCount ?? 0,
+      );
+    }).toList();
+
+    return TaxSummaryData(
+      totalTaxableSales: totalTaxableSales,
+      totalTaxCollected: totalTaxCollected,
+      // Simplified: tax collected from customers equals the amount payable to
+      // the authority (no input-tax deduction modelled at this stage).
+      estimatedTaxPayable: totalTaxCollected,
+      auditReadyCount: auditReadyCount,
+      monthlyBreakdown: monthlyBreakdown,
+    );
+  }
+
   /// Month-over-month revenue comparison for [userId].
   Future<Map<String, double>> getMonthlyComparison(String userId) async {
     final now = DateTime.now();
@@ -243,4 +320,11 @@ class AnalyticsService {
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
   ];
   static String _monthName(int month) => _months[month - 1];
+}
+
+/// Mutable accumulator used while computing monthly tax totals.
+class _MutableMonthlyTax {
+  double taxableSales = 0;
+  double taxCollected = 0;
+  int invoiceCount = 0;
 }
