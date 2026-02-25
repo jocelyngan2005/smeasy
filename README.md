@@ -2,12 +2,8 @@
 
 A comprehensive Flutter application designed to help Malaysian small and medium enterprises (SMEs) comply with LHDN's mandatory e-invoicing (MyInvois) requirements starting in 2026.
 
-## 🎬 Demo & Presentation
-
-| Resource | Link |
-|---|---|
-| 📽️ Demo Video | *Coming soon* |
-| 📊 Presentation Slides | *Coming soon* |
+## 🎬 Demo Video
+Link: *Coming soon* 
 
 ---
 
@@ -313,6 +309,39 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
 
 - In-app notification screen listing compliance alerts and submission reminders
 - Alerts pulled from `/compliance_alerts` Firestore collection in real time
+
+---
+
+## 🛠️ Technical Challenges
+
+Building SME-EASY surfaced several non-trivial engineering problems. Below are the key challenges we encountered and the solutions we engineered.
+
+### 1. Integrating Cloud Functions with Vertex AI for AI-Powered Recommendations
+
+**Challenge:** Wiring Google Cloud Functions to Vertex AI for generating compliance recommendations and business insights introduced significant integration complexity — cloud infrastructure setup, IAM permissions, cold start latency, and error propagation all had to be managed carefully while keeping the app responsive.
+
+**Solution:** We designed a layered fallback chain so the feature degrades gracefully rather than failing hard:
+1. **Primary:** Cloud Function invokes the Vertex AI API for the richest, most contextually grounded recommendation.
+2. **Fallback:** If the Cloud Function is unavailable or returns an error, the app falls back to a direct Gemini API call, preserving most of the AI capability without the cloud infrastructure dependency.
+3. **Last resort:** If both AI paths fail (e.g., no network, quota exhausted), a curated set of static compliance tips is displayed so users always receive actionable guidance.
+
+This pattern ensured that AI recommendations remained available under adverse conditions and decoupled the app's reliability from any single backend service.
+
+---
+
+### 2. Handling Speech Recognition Errors in Voice-to-Invoice
+
+**Challenge:** On-device speech-to-text engines (via `speech_to_text`) are imperfect — regional accents, background noise, and domain-specific terminology (TINs, invoice numbers, Malaysian business names) all contribute to transcription errors. Passing a flawed transcript directly to Gemini for invoice generation risks producing incorrect line items, amounts, or buyer details.
+
+**Solution:** Rather than attempting to make the transcription perfect (an unsolvable problem at the device level), we introduced a mandatory human-in-the-loop review step. After Gemini parses the transcript into a structured invoice draft, the draft is presented in a fully editable form before it can be saved or submitted. Every field — buyer name, TIN, line items, and totals — can be corrected by the user in one pass. This keeps the voice flow fast while ensuring no inaccurate data reaches Firestore or the LHDN API without explicit user confirmation.
+
+---
+
+### 3. Disambiguating User Intent in a Shared Chat Interface
+
+**Challenge:** The AI assistant screen handles two distinct workflows — **invoice creation** (Voice-to-Invoice / text-to-invoice) and **compliance Q&A** (Knowledge Assistant). Both accept free-form natural language input on the same interface. A rule-based keyword classifier (e.g., checking for words like "create" or "what is") failed on ambiguous or mixed-intent messages such as *"Can you help me with an invoice for GST-exempt goods?"*, which could reasonably trigger either flow.
+
+**Solution:** We delegated intent classification to Gemini itself. Before executing any action, the app sends the user's message to Gemini with a structured prompt that instructs it to classify the intent as either `invoice_creation` or `compliance_question`. Only after receiving this classification does the app route the message to the appropriate handler — `GeminiInvoiceService` for invoice generation or `KnowledgeAssistantService` / `VertexAISearchService` for compliance Q&A. This leverages Gemini's contextual understanding to handle nuanced and ambiguous messages far more robustly than any hand-crafted rule set.
 
 ---
 
