@@ -850,7 +850,6 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
               ListTile(
                 leading: const Icon(Icons.camera_alt, color: AppColors.primary),
                 title: const Text('Take Photo'),
-                subtitle: const Text('Capture receipt or document'),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage(ImageSource.camera);
@@ -862,19 +861,17 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                   color: AppColors.accent,
                 ),
                 title: const Text('Choose from Gallery'),
-                subtitle: const Text('Select image from gallery'),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage(ImageSource.gallery);
                 },
               ),
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.picture_as_pdf,
-                  color: Colors.red,
+                  color: Colors.red[800], 
                 ),
                 title: const Text('Attach PDF Document'),
-                subtitle: const Text('Select PDF invoice or receipt'),
                 onTap: () {
                   Navigator.pop(context);
                   _pickPDFFile();
@@ -1149,13 +1146,13 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.grey[300]!),
                       borderRadius: BorderRadius.circular(12),
-                      color: Colors.red[50],
+                      color: Colors.white,
                     ),
                     child: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.picture_as_pdf,
-                          color: Colors.red,
+                          color: Colors.red[800],
                           size: 32,
                         ),
                         const SizedBox(width: 12),
@@ -1191,7 +1188,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                               _pdfFileName = null;
                             });
                           },
-                          color: Colors.red,
+                          color: Colors.grey[700],
                         ),
                       ],
                     ),
