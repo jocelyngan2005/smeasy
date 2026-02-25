@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -45,6 +46,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
 
   final _picker = ImagePicker();
   File? _imageFile;
+  File? _pdfFile;
+  String? _pdfFileName;
   Invoice? _previewInvoice;
   Customer? _previewCustomer;
   bool _isEditingInvoice = false;
@@ -191,10 +194,10 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   }
 
   Future<void> _generateInvoiceFromVoice() async {
-    if (_textController.text.trim().isEmpty && _imageFile == null) {
+    if (_textController.text.trim().isEmpty && _imageFile == null && _pdfFile == null) {
       Helpers.showErrorSnackbar(
         context,
-        'Please enter or speak invoice details',
+        'Please enter text or attach a document',
       );
       return;
     }
@@ -208,6 +211,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         'type': 'user',
         'text': userMessage,
         'image': attachedImage,
+        'pdf': _pdfFile,
+        'pdfName': _pdfFileName,
         'timestamp': DateTime.now(),
       });
       // Add loading message (category will be updated after intent detection)
@@ -219,6 +224,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       _isProcessing = true;
       _textController.clear();
       _imageFile = null;
+      _pdfFile = null;
+      _pdfFileName = null;
     });
 
     _scrollToBottom();
@@ -248,18 +255,18 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         }
       });
       
-      if (intent == 'customer_creation' && attachedImage == null) {
+      if (intent == 'customer_creation' && attachedImage == null && _pdfFile == null) {
         // Handle customer creation
         await _handleCustomerCreation(userMessage);
-      } else if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null) {
+      } else if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null && _pdfFile == null) {
         // Handle invoice modification
         await _handleInvoiceModification(userMessage);
-      } else if (intent == 'compliance_question' && attachedImage == null) {
+      } else if (intent == 'compliance_question' && attachedImage == null && _pdfFile == null) {
         // Handle compliance question with Knowledge Assistant
         await _handleComplianceQuestion(userMessage);
       } else {
         // Handle invoice generation
-        await _handleInvoiceGeneration(userMessage, attachedImage);
+        await _handleInvoiceGeneration(userMessage, attachedImage, _pdfFile);
       }
     } catch (e) {
       if (mounted) {
@@ -697,12 +704,20 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
   }
 
   /// Handle invoice generation using Invoice Orchestrator
-  Future<void> _handleInvoiceGeneration(String userMessage, File? attachedImage) async {
+  Future<void> _handleInvoiceGeneration(String userMessage, File? attachedImage, File? attachedPDF) async {
     try {
       InvoiceGenerationResult result;
       
       // Process based on input type
-      if (attachedImage != null) {
+      if (attachedPDF != null) {
+        // PDF document processing with Gemini Vision
+        // Gemini automatically detects PDF MIME type and extracts data
+        result = await _orchestrator.generateFromReceiptFile(
+          imageFile: attachedPDF,
+          userId: 'user123', // TODO: Replace with actual user ID from auth
+          saveDraft: false, // Disable Firestore for testing
+        );
+      } else if (attachedImage != null) {
         // Receipt scanning with Gemini Vision
         result = await _orchestrator.generateFromReceiptFile(
           imageFile: attachedImage,
@@ -754,7 +769,10 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
           }
           
           // Add extraction source
-          if (attachedImage != null) {
+          if (attachedPDF != null) {
+            final extractionQuality = result.draft!.extractedEntities?.last ?? 'unknown';
+            responseText.writeln('📄 PDF Extraction Quality: $extractionQuality');
+          } else if (attachedImage != null) {
             final ocrQuality = result.draft!.extractedEntities?.last ?? 'unknown';
             responseText.writeln('📸 OCR Quality: $ocrQuality');
           }
@@ -807,7 +825,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
     }
   }
 
-  void _showImageSourceOptions() {
+  void _showAttachmentOptions() {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -822,6 +840,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
               ListTile(
                 leading: const Icon(Icons.camera_alt, color: AppColors.primary),
                 title: const Text('Take Photo'),
+                subtitle: const Text('Capture receipt or document'),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage(ImageSource.camera);
@@ -833,9 +852,22 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                   color: AppColors.accent,
                 ),
                 title: const Text('Choose from Gallery'),
+                subtitle: const Text('Select image from gallery'),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.picture_as_pdf,
+                  color: Colors.red,
+                ),
+                title: const Text('Attach PDF Document'),
+                subtitle: const Text('Select PDF invoice or receipt'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickPDFFile();
                 },
               ),
             ],
@@ -857,10 +889,34 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
       if (pickedFile != null) {
         setState(() {
           _imageFile = File(pickedFile.path);
+          // Clear PDF if image is selected
+          _pdfFile = null;
+          _pdfFileName = null;
         });
       }
     } catch (e) {
       Helpers.showErrorSnackbar(context, 'Failed to pick image');
+    }
+  }
+
+  Future<void> _pickPDFFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        setState(() {
+          _pdfFile = File(result.files.single.path!);
+          _pdfFileName = result.files.single.name;
+          // Clear image if PDF is selected
+          _imageFile = null;
+        });
+      }
+    } catch (e) {
+      Helpers.showErrorSnackbar(context, 'Failed to pick PDF file');
     }
   }
 
@@ -1075,6 +1131,61 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                       ],
                     ),
                   ),
+                // PDF Preview if attached
+                if (_pdfFile != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.red[50],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.picture_as_pdf,
+                          color: Colors.red,
+                          size: 32,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _pdfFileName ?? 'document.pdf',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'PDF Document',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () {
+                            setState(() {
+                              _pdfFile = null;
+                              _pdfFileName = null;
+                            });
+                          },
+                          color: Colors.red,
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Input Row
                 Row(
@@ -1089,7 +1200,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                         icon: const Icon(Icons.add, size: 24),
                         onPressed: _isProcessing
                             ? null
-                            : _showImageSourceOptions,
+                            : _showAttachmentOptions,
                         color: Colors.grey[700],
                         padding: const EdgeInsets.all(12),
                         constraints: const BoxConstraints(),
@@ -1165,7 +1276,8 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                               child: IconButton(
                                 icon: Icon(
                                   _textController.text.isNotEmpty ||
-                                          _imageFile != null
+                                          _imageFile != null ||
+                                          _pdfFile != null
                                       ? Icons.send_rounded
                                       : Icons.graphic_eq_rounded,
                                   size: 18,
@@ -1173,7 +1285,8 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                                 ),
                                 onPressed:
                                     (_textController.text.isNotEmpty ||
-                                            _imageFile != null) &&
+                                            _imageFile != null ||
+                                            _pdfFile != null) &&
                                         !_isProcessing
                                     ? _generateInvoiceFromVoice
                                     : null,
@@ -1296,6 +1409,44 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                               message['image'],
                               height: 150,
                               fit: BoxFit.cover,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        if (message['pdf'] != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isUser ? Colors.white30 : Colors.grey[300]!,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              color: isUser 
+                                  ? Colors.white.withOpacity(0.1)
+                                  : Colors.red[50],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.picture_as_pdf,
+                                  color: isUser ? Colors.white : Colors.red,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    message['pdfName'] ?? 'document.pdf',
+                                    style: TextStyle(
+                                      color: isUser ? Colors.white : Colors.black87,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -2602,14 +2753,24 @@ class _MarkdownText extends StatelessWidget {
     required this.textColor,
   });
 
+  /// Sanitize text to remove invalid UTF-16 characters
+  String _sanitizeText(String text) {
+    try {
+      // Remove invalid UTF-16 characters
+      final cleanText = text.replaceAll(RegExp(r'[\uD800-\uDFFF]'), '');
+      return cleanText;
+    } catch (e) {
+      return text;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    print('DEBUG MarkdownText: Received text length=${text.length}');
-    print('DEBUG MarkdownText: Text preview: ${text.substring(0, text.length > 200 ? 200 : text.length)}');
+    final sanitizedText = _sanitizeText(text);
     
     return RichText(
       text: TextSpan(
-        children: _parseMarkdown(text, context),
+        children: _parseMarkdown(sanitizedText, context),
         style: TextStyle(color: textColor, fontSize: 14, height: 1.5),
       ),
     );
