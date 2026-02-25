@@ -48,12 +48,12 @@ class CustomerCreationService {
         addresses: [
           CustomerAddress(
             id: addressId,
-            line1: parsed.addressLine1 ?? 'Not provided',
+            line1: parsed.addressLine1 ?? '',
             line2: parsed.addressLine2,
             line3: parsed.addressLine3,
-            city: parsed.city ?? 'Not provided',
-            state: parsed.state ?? 'Not provided',
-            postalCode: parsed.postalCode ?? '00000',
+            city: parsed.city ?? '',
+            state: parsed.state ?? '',
+            postalCode: parsed.postalCode ?? '',
             country: parsed.country ?? 'MY',
             isPrimary: true,
             label: 'Primary',

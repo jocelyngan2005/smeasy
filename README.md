@@ -2,12 +2,8 @@
 
 A comprehensive Flutter application designed to help Malaysian small and medium enterprises (SMEs) comply with LHDN's mandatory e-invoicing (MyInvois) requirements starting in 2026.
 
-## 🎬 Demo & Presentation
-
-| Resource | Link |
-|---|---|
-| 📽️ Demo Video | *Coming soon* |
-| 📊 Presentation Slides | *Coming soon* |
+## 🎬 Demo Video
+Link: *Coming soon* 
 
 ---
 
@@ -211,12 +207,14 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
 
 ### 3. Receipt & Document Scanning
 **Google Technologies:** Gemini 2.5 Flash Vision (multimodal API)  
-*Natively handles image + text prompts in a single API call, extracting buyer TIN, line items, and tax amounts from receipt photos without a separate OCR pipeline.*
+*Natively handles image and PDF inputs in a single API call, extracting buyer TIN, line items, and tax amounts without a separate OCR pipeline. 
 
 - Capture receipts with the device camera or pick from gallery (`image_picker`)
-- Image sent as a multipart request to Gemini Vision
-- AI extracts buyer name, TIN, address, line items, and tax amounts from the image
-- Confidence scoring displayed for each extracted field
+- Attach PDF documents directly from the device storage
+- Files and images are mutually exclusive attachments, selecting one clears the other
+- AI extracts buyer name, TIN, address, line items, and tax amounts from both receipt images and PDF invoices/documents
+- Confidence scoring and extraction quality indicator displayed for each processed file
+- Warnings and missing fields surfaced in the chat response before saving
 - One-tap creation of a full invoice from extracted data
 
 ---
@@ -313,6 +311,39 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
 
 - In-app notification screen listing compliance alerts and submission reminders
 - Alerts pulled from `/compliance_alerts` Firestore collection in real time
+
+---
+
+## 🛠️ Technical Challenges
+
+Building SME-EASY surfaced several non-trivial engineering problems. Below are the key challenges we encountered and the solutions we engineered.
+
+### 1. Integrating Cloud Functions with Vertex AI for AI-Powered Recommendations
+
+**Challenge:** Wiring Google Cloud Functions to Vertex AI for generating compliance recommendations and business insights introduced significant integration complexity — cloud infrastructure setup, IAM permissions, cold start latency, and error propagation all had to be managed carefully while keeping the app responsive.
+
+**Solution:** We designed a layered fallback chain so the feature degrades gracefully rather than failing hard:
+1. **Primary:** Cloud Function invokes the Vertex AI API for the richest, most contextually grounded recommendation.
+2. **Fallback:** If the Cloud Function is unavailable or returns an error, the app falls back to a direct Gemini API call, preserving most of the AI capability without the cloud infrastructure dependency.
+3. **Last resort:** If both AI paths fail (e.g., no network, quota exhausted), a curated set of static compliance tips is displayed so users always receive actionable guidance.
+
+This pattern ensured that AI recommendations remained available under adverse conditions and decoupled the app's reliability from any single backend service.
+
+---
+
+### 2. Handling Speech Recognition Errors in Voice-to-Invoice
+
+**Challenge:** On-device speech-to-text engines (via `speech_to_text`) are imperfect — regional accents, background noise, and domain-specific terminology (TINs, invoice numbers, Malaysian business names) all contribute to transcription errors. Passing a flawed transcript directly to Gemini for invoice generation risks producing incorrect line items, amounts, or buyer details.
+
+**Solution:** Rather than attempting to make the transcription perfect (an unsolvable problem at the device level), we introduced a mandatory human-in-the-loop review step. After Gemini parses the transcript into a structured invoice draft, the draft is presented in a fully editable form before it can be saved or submitted. Every field — buyer name, TIN, line items, and totals — can be corrected by the user in one pass. This keeps the voice flow fast while ensuring no inaccurate data reaches Firestore or the LHDN API without explicit user confirmation.
+
+---
+
+### 3. Disambiguating User Intent in a Shared Chat Interface
+
+**Challenge:** The AI assistant screen handles four distinct workflows — **invoice creation** (Voice-to-Invoice / text-to-invoice), **compliance Q&A** (Knowledge Assistant), **customer creation**, and **invoice modification** — all accepting free-form natural language input on the same interface. A rule-based keyword classifier (e.g., checking for words like "create" or "what is") failed on ambiguous or mixed-intent messages such as *"Can you help me with an invoice for GST-exempt goods?"* or *"Update the amount on my last invoice"*, which could reasonably trigger multiple flows.
+
+**Solution:** We delegated intent classification to Gemini itself via `_detectUserIntent()` in `AIAssistantScreen`. Before executing any action, the app sends the user's message to `gemini-2.5-flash-lite` (temperature 0.1 for deterministic output) with a structured prompt that instructs it to classify the intent. The available categories are context-aware: `invoice_creation`, `compliance_question`, and `customer_creation` are always offered, while `invoice_modification` is only added to the prompt when an invoice draft is already loaded in the preview pane (`_previewInvoice != null`) — preventing spurious modification attempts on a blank state. Only after receiving this classification does the app route the message to the appropriate handler: `_handleCustomerCreation()`, `_handleInvoiceModification()`, `_handleComplianceQuestion()` (backed by `KnowledgeAssistantService` / `VertexAISearchService`), or `_handleInvoiceGeneration()` (backed by `GeminiInvoiceService`). If the AI classification is ambiguous or the API call fails, a lightweight keyword heuristic (checking for phrases like *"add customer"*, field-update verbs, or LHDN-related terms) provides a safe fallback before defaulting to `invoice_creation`. This layered approach handles nuanced and ambiguous messages far more robustly than any hand-crafted rule set alone.
 
 ---
 

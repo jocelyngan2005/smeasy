@@ -16,29 +16,51 @@ class GeminiVisionReceiptService {
   GeminiVisionReceiptService()
       : _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '',
         _visionModel = GenerativeModel(
-          model: 'gemini-2.5-flash',
+          model: 'gemini-2.5-flash-lite',
           apiKey: dotenv.env['GEMINI_API_KEY'] ?? '',
         ) {
     if (_apiKey.isEmpty) {
       throw Exception('GEMINI_API_KEY not found in .env file');
     }
+    print('DEBUG GeminiVision: Service initialized with model: gemini-1.5-flash');
   }
 
   /// Scan receipt image and extract invoice information
   Future<InvoiceDraft> scanReceipt({
     required File imageFile,
   }) async {
+    print('DEBUG GeminiVision: ========== SCAN RECEIPT CALLED ==========');
+    print('DEBUG GeminiVision: File path: ${imageFile.path}');
+    
     try {
-      // Read image bytes
-      final imageBytes = await imageFile.readAsBytes();
+      // Check if file exists
+      final exists = await imageFile.exists();
+      print('DEBUG GeminiVision: File exists: $exists');
       
-      // Create image part for Gemini
-      final imagePart = DataPart('image/jpeg', imageBytes);
+      if (!exists) {
+        throw Exception('File does not exist: ${imageFile.path}');
+      }
+      
+      // Read image bytes
+      print('DEBUG GeminiVision: Reading file bytes...');
+      final imageBytes = await imageFile.readAsBytes();
+      print('DEBUG GeminiVision: File size: ${imageBytes.length} bytes');
+      
+      // Determine MIME type based on file extension
+      final String mimeType = _getMimeTypeFromFile(imageFile);
+      print('DEBUG GeminiVision: Detected MIME type: $mimeType');
+      
+      // Create image/document part for Gemini
+      print('DEBUG GeminiVision: Creating DataPart with MIME type: $mimeType');
+      final imagePart = DataPart(mimeType, imageBytes);
       
       // Build prompt for receipt extraction
+      print('DEBUG GeminiVision: Building extraction prompt...');
       final prompt = _buildReceiptExtractionPrompt();
+      print('DEBUG GeminiVision: Prompt length: ${prompt.length} chars');
       
       // Call Gemini Vision API
+      print('DEBUG GeminiVision: Calling Gemini API...');
       final response = await _visionModel.generateContent([
         Content.multi([
           TextPart(prompt),
@@ -46,19 +68,39 @@ class GeminiVisionReceiptService {
         ])
       ]);
 
+      print('DEBUG GeminiVision: Response received!');
+      
       if (response.text == null || response.text!.isEmpty) {
+        print('DEBUG GeminiVision: ERROR - Response is null or empty');
         throw Exception('No response from Gemini Vision');
       }
 
+      print('DEBUG GeminiVision: Response length: ${response.text!.length} chars');
+      print('DEBUG GeminiVision: First 500 chars: ${response.text!.substring(0, response.text!.length > 500 ? 500 : response.text!.length)}');
+      
       // Parse response
       final jsonResponse = _extractJsonFromResponse(response.text!);
+      print('DEBUG GeminiVision: Extracted JSON length: ${jsonResponse.length}');
+      
       final parsedData = jsonDecode(jsonResponse);
+      print('DEBUG GeminiVision: Parsed data keys: ${parsedData.keys.toList()}');
+      
+      if (parsedData['vendor'] != null) {
+        print('DEBUG GeminiVision: Vendor data: ${parsedData['vendor']}');
+      }
+      if (parsedData['lineItems'] != null) {
+        print('DEBUG GeminiVision: Line items count: ${(parsedData['lineItems'] as List).length}');
+      }
 
       // Create invoice draft
       final draft = _createDraftFromReceiptData(parsedData);
       
+      print('DEBUG GeminiVision: Successfully created draft!');
       return draft;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('DEBUG GeminiVision: ========== ERROR ==========');
+      print('DEBUG GeminiVision: Error: $e');
+      print('DEBUG GeminiVision: Stack trace: $stackTrace');
       throw Exception('Failed to scan receipt: $e');
     }
   }
@@ -105,7 +147,7 @@ class GeminiVisionReceiptService {
     return '''
 You are an AI assistant specialized in extracting invoice/receipt information for Malaysian businesses.
 
-Analyze the receipt/invoice image and extract all relevant information.
+Analyze the receipt/invoice image or PDF document and extract all relevant information.
 
 EXTRACTION REQUIREMENTS:
 1. **Vendor Information**: Business name, TIN, SST number, address, phone, email
@@ -374,7 +416,10 @@ Do not include markdown formatting or explanations. Return only the JSON object.
   }) async {
     try {
       final imageBytes = await imageFile.readAsBytes();
-      final imagePart = DataPart('image/jpeg', imageBytes);
+      
+      // Determine MIME type based on file extension
+      final String mimeType = _getMimeTypeFromFile(imageFile);
+      final imagePart = DataPart(mimeType, imageBytes);
       
       final prompt = '''
 From the receipt/invoice image, extract only the following field: "$fieldName"
@@ -402,6 +447,26 @@ Return a JSON object with the field name and value:
       return jsonDecode(jsonResponse) as Map<String, dynamic>;
     } catch (e) {
       throw Exception('Failed to extract field: $e');
+    }
+  }
+
+  /// Determine MIME type from file extension
+  String _getMimeTypeFromFile(File file) {
+    final path = file.path.toLowerCase();
+    
+    if (path.endsWith('.pdf')) {
+      return 'application/pdf';
+    } else if (path.endsWith('.png')) {
+      return 'image/png';
+    } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    } else if (path.endsWith('.webp')) {
+      return 'image/webp';
+    } else if (path.endsWith('.heic') || path.endsWith('.heif')) {
+      return 'image/heic';
+    } else {
+      // Default to JPEG for unknown image types
+      return 'image/jpeg';
     }
   }
 }

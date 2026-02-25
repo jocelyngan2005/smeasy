@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -45,9 +46,12 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
 
   final _picker = ImagePicker();
   File? _imageFile;
+  File? _pdfFile;
+  String? _pdfFileName;
   Invoice? _previewInvoice;
   Customer? _previewCustomer;
   bool _isEditingInvoice = false;
+  bool _isEditingCustomer = false;
 
   // Invoice editing controllers
   final _invoiceNumberController = TextEditingController();
@@ -63,6 +67,24 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
 
   // Line item controllers
   final List<Map<String, TextEditingController>> _lineItemControllers = [];
+
+  // Customer editing controllers
+  final _customerNameEditController = TextEditingController();
+  final _customerTinController = TextEditingController();
+  final _customerRegistrationController = TextEditingController();
+  final _customerIdNumberController = TextEditingController();
+  final _customerEmailController = TextEditingController();
+  final _customerPhoneController = TextEditingController();
+  final _customerSstController = TextEditingController();
+  final _customerContactPersonController = TextEditingController();
+  final _customerAddressLine1Controller = TextEditingController();
+  final _customerAddressLine2Controller = TextEditingController();
+  final _customerAddressLine3Controller = TextEditingController();
+  final _customerCityController = TextEditingController();
+  final _customerStateController = TextEditingController();
+  final _customerPostalCodeController = TextEditingController();
+  final _customerCountryController = TextEditingController();
+  final _customerNotesController = TextEditingController();
 
   // Chat messages
   final List<Map<String, dynamic>> _messages = [];
@@ -99,6 +121,23 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       controllerMap['unitPrice']?.dispose();
     }
     _lineItemControllers.clear();
+    // Dispose customer controllers
+    _customerNameEditController.dispose();
+    _customerTinController.dispose();
+    _customerRegistrationController.dispose();
+    _customerIdNumberController.dispose();
+    _customerEmailController.dispose();
+    _customerPhoneController.dispose();
+    _customerSstController.dispose();
+    _customerContactPersonController.dispose();
+    _customerAddressLine1Controller.dispose();
+    _customerAddressLine2Controller.dispose();
+    _customerAddressLine3Controller.dispose();
+    _customerCityController.dispose();
+    _customerStateController.dispose();
+    _customerPostalCodeController.dispose();
+    _customerCountryController.dispose();
+    _customerNotesController.dispose();
     super.dispose();
   }
 
@@ -155,10 +194,10 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   }
 
   Future<void> _generateInvoiceFromVoice() async {
-    if (_textController.text.trim().isEmpty && _imageFile == null) {
+    if (_textController.text.trim().isEmpty && _imageFile == null && _pdfFile == null) {
       Helpers.showErrorSnackbar(
         context,
-        'Please enter or speak invoice details',
+        'Please enter text or attach a document',
       );
       return;
     }
@@ -166,12 +205,15 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     // Add user message to chat
     final userMessage = _textController.text;
     final attachedImage = _imageFile;
+    final attachedPDF = _pdfFile;  // Capture PDF before clearing state
 
     setState(() {
       _messages.add({
         'type': 'user',
         'text': userMessage,
         'image': attachedImage,
+        'pdf': attachedPDF,
+        'pdfName': _pdfFileName,
         'timestamp': DateTime.now(),
       });
       // Add loading message (category will be updated after intent detection)
@@ -183,6 +225,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       _isProcessing = true;
       _textController.clear();
       _imageFile = null;
+      _pdfFile = null;
+      _pdfFileName = null;
     });
 
     _scrollToBottom();
@@ -212,18 +256,18 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         }
       });
       
-      if (intent == 'customer_creation' && attachedImage == null) {
+      if (intent == 'customer_creation' && attachedImage == null && attachedPDF == null) {
         // Handle customer creation
         await _handleCustomerCreation(userMessage);
-      } else if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null) {
+      } else if (intent == 'invoice_modification' && _previewInvoice != null && attachedImage == null && attachedPDF == null) {
         // Handle invoice modification
         await _handleInvoiceModification(userMessage);
-      } else if (intent == 'compliance_question' && attachedImage == null) {
+      } else if (intent == 'compliance_question' && attachedImage == null && attachedPDF == null) {
         // Handle compliance question with Knowledge Assistant
         await _handleComplianceQuestion(userMessage);
       } else {
         // Handle invoice generation
-        await _handleInvoiceGeneration(userMessage, attachedImage);
+        await _handleInvoiceGeneration(userMessage, attachedImage, attachedPDF);
       }
     } catch (e) {
       if (mounted) {
@@ -285,21 +329,53 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
             
             // Build response message
             final responseText = StringBuffer();
-            responseText.writeln('✅ Customer profile created!\n');
-            responseText.writeln(result.summary);
+            responseText.writeln('✅ Customer profile created!');
             
-            // Add missing fields warning if any
-            if (result.missingFields != null && result.missingFields!.isNotEmpty) {
-              responseText.writeln('\n⚠️ **Optional fields not provided:**');
-              for (var field in result.missingFields!) {
-                responseText.writeln('  • $field');
-              }
+            // Check all required fields and list missing ones
+            final missingRequiredFields = <String>[];
+            final customer = result.customer!;
+            
+            if (customer.name.trim().isEmpty) missingRequiredFields.add('Company/Name');
+            if (customer.tin == null || customer.tin!.trim().isEmpty) missingRequiredFields.add('TIN');
+            if (customer.registrationNumber == null || customer.registrationNumber!.trim().isEmpty) {
+              missingRequiredFields.add('Registration No.');
+            }
+            if (customer.identificationNumber == null || customer.identificationNumber!.trim().isEmpty) {
+              missingRequiredFields.add('ID Number');
+            }
+            if (customer.email == null || customer.email!.trim().isEmpty) missingRequiredFields.add('Email');
+            if (customer.contactNumber == null || customer.contactNumber!.trim().isEmpty) {
+              missingRequiredFields.add('Phone');
+            }
+            if (customer.sstNumber == null || customer.sstNumber!.trim().isEmpty) {
+              missingRequiredFields.add('SST Number');
+            }
+            if (customer.contactPerson == null || customer.contactPerson!.trim().isEmpty) {
+              missingRequiredFields.add('Contact Person');
             }
             
-            responseText.writeln('\n**Next Steps:**');
-            responseText.writeln('  • Review the customer details below');
-            responseText.writeln('  • Click "Save Customer" to add to your database');
-            responseText.writeln('  • Or say "Cancel" to discard');
+            // Check address fields (all 7 are required)
+            final address = customer.primaryAddress;
+            if (address == null) {
+              missingRequiredFields.add('Primary Address (all fields)');
+            } else {
+              if (address.line1.trim().isEmpty) missingRequiredFields.add('Street Line 1');
+              if (address.line2 == null || address.line2!.trim().isEmpty) missingRequiredFields.add('Street Line 2');
+              if (address.line3 == null || address.line3!.trim().isEmpty) missingRequiredFields.add('Street Line 3');
+              if (address.city.trim().isEmpty) missingRequiredFields.add('City');
+              if (address.state.trim().isEmpty) missingRequiredFields.add('State');
+              if (address.postalCode.trim().isEmpty) missingRequiredFields.add('Postal Code');
+              if (address.country.trim().isEmpty) missingRequiredFields.add('Country');
+            }
+            
+            // Display warning if any required fields are missing
+            if (missingRequiredFields.isNotEmpty) {
+              responseText.writeln('\n⚠️ **Required fields missing:**');
+              for (var field in missingRequiredFields) {
+                responseText.writeln('  • $field');
+              }
+              responseText.writeln('\n💡 **Tip:** Click Edit button to fill in missing fields before saving.');
+            }
             
             // Add confirmation message with customer preview
             _messages.add({
@@ -411,7 +487,7 @@ I can help you with:
 
 📋 **Create Invoices**
    • From voice: "Create an invoice for ABC Corp"
-   • From receipt: Attach a photo
+   • From receipt: Attach a photo or PDF
 
 ✏️ **Modify Invoices**
    • "Change buyer name to Jane Doe"
@@ -629,18 +705,35 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
   }
 
   /// Handle invoice generation using Invoice Orchestrator
-  Future<void> _handleInvoiceGeneration(String userMessage, File? attachedImage) async {
+  Future<void> _handleInvoiceGeneration(String userMessage, File? attachedImage, File? attachedPDF) async {
+    print('DEBUG UI: _handleInvoiceGeneration called');
+    print('DEBUG UI: userMessage: $userMessage');
+    print('DEBUG UI: attachedImage: ${attachedImage?.path}');
+    print('DEBUG UI: attachedPDF: ${attachedPDF?.path}');
+    
     try {
       InvoiceGenerationResult result;
       
       // Process based on input type
-      if (attachedImage != null) {
+      if (attachedPDF != null) {
+        // PDF document processing with Gemini Vision
+        // Gemini automatically detects PDF MIME type and extracts data
+        print('DEBUG UI: Processing PDF file: ${attachedPDF.path}');
+        result = await _orchestrator.generateFromReceiptFile(
+          imageFile: attachedPDF,
+          userId: 'user123', // TODO: Replace with actual user ID from auth
+          saveDraft: false, // Disable Firestore for testing
+        );
+        print('DEBUG UI: PDF processing completed');
+      } else if (attachedImage != null) {
         // Receipt scanning with Gemini Vision
+        print('DEBUG UI: Processing image file: ${attachedImage.path}');
         result = await _orchestrator.generateFromReceiptFile(
           imageFile: attachedImage,
           userId: 'user123', // TODO: Replace with actual user ID from auth
           saveDraft: false, // Disable Firestore for testing
         );
+        print('DEBUG UI: Image processing completed');
       } else {
         // Voice/text input with Gemini AI
         result = await _orchestrator.generateFromVoiceOrText(
@@ -686,7 +779,10 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
           }
           
           // Add extraction source
-          if (attachedImage != null) {
+          if (attachedPDF != null) {
+            final extractionQuality = result.draft!.extractedEntities?.last ?? 'unknown';
+            responseText.writeln('📄 PDF Extraction Quality: $extractionQuality');
+          } else if (attachedImage != null) {
             final ocrQuality = result.draft!.extractedEntities?.last ?? 'unknown';
             responseText.writeln('📸 OCR Quality: $ocrQuality');
           }
@@ -739,7 +835,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
     }
   }
 
-  void _showImageSourceOptions() {
+  void _showAttachmentOptions() {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -770,6 +866,17 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                   _pickImage(ImageSource.gallery);
                 },
               ),
+              ListTile(
+                leading: Icon(
+                  Icons.picture_as_pdf,
+                  color: Colors.red[800], 
+                ),
+                title: const Text('Attach PDF Document'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickPDFFile();
+                },
+              ),
             ],
           ),
         ),
@@ -789,10 +896,34 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
       if (pickedFile != null) {
         setState(() {
           _imageFile = File(pickedFile.path);
+          // Clear PDF if image is selected
+          _pdfFile = null;
+          _pdfFileName = null;
         });
       }
     } catch (e) {
       Helpers.showErrorSnackbar(context, 'Failed to pick image');
+    }
+  }
+
+  Future<void> _pickPDFFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        setState(() {
+          _pdfFile = File(result.files.single.path!);
+          _pdfFileName = result.files.single.name;
+          // Clear image if PDF is selected
+          _imageFile = null;
+        });
+      }
+    } catch (e) {
+      Helpers.showErrorSnackbar(context, 'Failed to pick PDF file');
     }
   }
 
@@ -1007,6 +1138,61 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                       ],
                     ),
                   ),
+                // PDF Preview if attached
+                if (_pdfFile != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.white,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.picture_as_pdf,
+                          color: Colors.red[800],
+                          size: 32,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _pdfFileName ?? 'document.pdf',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'PDF Document',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () {
+                            setState(() {
+                              _pdfFile = null;
+                              _pdfFileName = null;
+                            });
+                          },
+                          color: Colors.grey[700],
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Input Row
                 Row(
@@ -1021,7 +1207,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                         icon: const Icon(Icons.add, size: 24),
                         onPressed: _isProcessing
                             ? null
-                            : _showImageSourceOptions,
+                            : _showAttachmentOptions,
                         color: Colors.grey[700],
                         padding: const EdgeInsets.all(12),
                         constraints: const BoxConstraints(),
@@ -1097,7 +1283,8 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                               child: IconButton(
                                 icon: Icon(
                                   _textController.text.isNotEmpty ||
-                                          _imageFile != null
+                                          _imageFile != null ||
+                                          _pdfFile != null
                                       ? Icons.send_rounded
                                       : Icons.graphic_eq_rounded,
                                   size: 18,
@@ -1105,7 +1292,8 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                                 ),
                                 onPressed:
                                     (_textController.text.isNotEmpty ||
-                                            _imageFile != null) &&
+                                            _imageFile != null ||
+                                            _pdfFile != null) &&
                                         !_isProcessing
                                     ? _generateInvoiceFromVoice
                                     : null,
@@ -1232,19 +1420,57 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                           ),
                           const SizedBox(height: 8),
                         ],
+                        if (message['pdf'] != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: isUser ? Colors.white30 : Colors.grey[300]!,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                              color: isUser 
+                                  ? Colors.white.withOpacity(0.1)
+                                  : Colors.red[50],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.picture_as_pdf,
+                                  color: isUser ? Colors.white : Colors.red,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    message['pdfName'] ?? 'document.pdf',
+                                    style: TextStyle(
+                                      color: isUser ? Colors.white : Colors.black87,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         if (message['text'] != null &&
                             message['text'].isNotEmpty)
-                          isCompliance
-                              ? _MarkdownText(
-                                  text: message['text'],
-                                  textColor: Colors.black87,
-                                )
-                              : Text(
+                          isUser
+                              ? Text(
                                   message['text'],
-                                  style: TextStyle(
-                                    color: isUser ? Colors.white : Colors.black87,
+                                  style: const TextStyle(
+                                    color: Colors.white,
                                     fontSize: 14,
                                   ),
+                                )
+                              : _MarkdownText(
+                                  text: message['text'],
+                                  textColor: isError ? Colors.red[900]! : Colors.black87,
                                 ),
                         if (message['invoice'] != null)
                           _buildInvoicePreviewCard(message['invoice'], message, index),
@@ -1298,67 +1524,162 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                       color: AppColors.primary,
                     ),
                   ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(
+                      _isEditingCustomer ? Icons.check : Icons.edit,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        if (_isEditingCustomer) {
+                          // Save changes - update preview customer
+                          _previewCustomer = _updateCustomerFromControllers(customer);
+                          
+                          // Update customer in the message
+                          for (int i = _messages.length - 1; i >= 0; i--) {
+                            if (_messages[i]['type'] == 'assistant' && 
+                                _messages[i]['customer'] != null) {
+                              _messages[i]['customer'] = _previewCustomer;
+                              break;
+                            }
+                          }
+                          
+                          _isEditingCustomer = false;
+                        } else {
+                          // Enter edit mode - populate controllers
+                          _populateCustomerControllers(customer);
+                          _isEditingCustomer = true;
+                        }
+                      });
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
                 ],
               ),
               const Divider(height: 24),
               
-              // Name
-              _buildCustomerInfoRow('Company/Name', customer.name, bold: true),
-              if (customer.tin != null) 
-                _buildCustomerInfoRow('TIN', customer.tin!),
-              if (customer.registrationNumber != null)
-                _buildCustomerInfoRow('Registration No.', customer.registrationNumber!),
-              if (customer.identificationNumber != null)
-                _buildCustomerInfoRow('ID Number', customer.identificationNumber!),
-              if (customer.email != null)
-                _buildCustomerInfoRow('Email', customer.email!),
-              if (customer.contactNumber != null)
-                _buildCustomerInfoRow('Phone', customer.contactNumber!),
-              if (customer.sstNumber != null)
-                _buildCustomerInfoRow('SST Number', customer.sstNumber!),
-              if (customer.contactPerson != null)
-                _buildCustomerInfoRow('Contact Person', customer.contactPerson!),
+              // All fields (required except notes)
+              _buildCustomerInfoRow('Company/Name', customer.name, bold: true, 
+                controller: _customerNameEditController, isRequired: true),
+              _buildCustomerInfoRow('TIN', customer.tin ?? '', 
+                controller: _customerTinController, isRequired: true),
+              _buildCustomerInfoRow('Registration No.', customer.registrationNumber ?? '', 
+                controller: _customerRegistrationController, isRequired: true),
+              _buildCustomerInfoRow('ID Number', customer.identificationNumber ?? '', 
+                controller: _customerIdNumberController, isRequired: true),
+              _buildCustomerInfoRow('Email', customer.email ?? '', 
+                controller: _customerEmailController, isRequired: true),
+              _buildCustomerInfoRow('Phone', customer.contactNumber ?? '', 
+                controller: _customerPhoneController, isRequired: true),
+              _buildCustomerInfoRow('SST Number', customer.sstNumber ?? '', 
+                controller: _customerSstController, isRequired: true),
+              _buildCustomerInfoRow('Contact Person', customer.contactPerson ?? '', 
+                controller: _customerContactPersonController, isRequired: true),
               
-              // Primary Address
-              if (customer.primaryAddress != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Primary Address:',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
+              // Primary Address (all required)
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(
+                    'Primary Address',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
+                  Text(
+                    ' *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  Text(
+                    ':',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              if (!_isEditingCustomer)
                 Text(
-                  customer.primaryAddress!.fullAddress,
+                  customer.primaryAddress?.fullAddress ?? 'Not provided',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey[800],
                   ),
-                ),
+                )
+              else ...[ 
+                _buildCustomerInfoRow('Street Line 1', 
+                  customer.primaryAddress?.line1 ?? '', 
+                  controller: _customerAddressLine1Controller, isRequired: true),
+                _buildCustomerInfoRow('Street Line 2', 
+                  customer.primaryAddress?.line2 ?? '', 
+                  controller: _customerAddressLine2Controller, isRequired: true),
+                _buildCustomerInfoRow('Street Line 3', 
+                  customer.primaryAddress?.line3 ?? '', 
+                  controller: _customerAddressLine3Controller, isRequired: true),
+                _buildCustomerInfoRow('City', 
+                  customer.primaryAddress?.city ?? '', 
+                  controller: _customerCityController, isRequired: true),
+                _buildCustomerInfoRow('State', 
+                  customer.primaryAddress?.state ?? '', 
+                  controller: _customerStateController, isRequired: true),
+                _buildCustomerInfoRow('Postal Code', 
+                  customer.primaryAddress?.postalCode ?? '', 
+                  controller: _customerPostalCodeController, isRequired: true),
+                _buildCustomerInfoRow('Country', 
+                  customer.primaryAddress?.country ?? 'MY', 
+                  controller: _customerCountryController, isRequired: true),
               ],
               
-              if (customer.notes != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Notes:',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
-                  ),
+              // Notes (optional)
+              const SizedBox(height: 8),
+              Text(
+                'Notes (Optional):',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[700],
                 ),
-                const SizedBox(height: 4),
+              ),
+              const SizedBox(height: 4),
+              if (!_isEditingCustomer)
                 Text(
-                  customer.notes!,
+                  customer.notes ?? '-',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey[800],
                   ),
+                )
+              else
+                TextField(
+                  controller: _customerNotesController,
+                  maxLines: 2,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide(color: Colors.grey[300]!),
+                    ),
+                    hintText: 'Additional notes (optional)...',
+                    hintStyle: TextStyle(color: Colors.grey[400]),
+                  ),
                 ),
-              ],
             ],
           ),
         ),
@@ -1402,7 +1723,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: ElevatedButton(
-                  onPressed: () => _saveCustomer(customer),
+                  onPressed: () => _validateAndSaveCustomer(customer),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     foregroundColor: Colors.white,
@@ -1426,7 +1747,15 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
     );
   }
   
-  Widget _buildCustomerInfoRow(String label, String value, {bool bold = false}) {
+  Widget _buildCustomerInfoRow(
+    String label, 
+    String value, {
+    bool bold = false,
+    TextEditingController? controller,
+    bool isRequired = false,
+  }) {
+    final shouldEdit = controller != null && _isEditingCustomer;
+    
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1435,27 +1764,110 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
           SizedBox(
             width: 120,
             child: Text(
-              '$label:',
+              '$label${isRequired ? " *" : ""}:',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: Colors.grey[700],
+                color: isRequired ? AppColors.primary : Colors.grey[700],
               ),
             ),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: bold ? FontWeight.bold : FontWeight.w500,
-                color: bold ? AppColors.primary : Colors.grey[800],
-              ),
-            ),
+            child: shouldEdit
+                ? TextField(
+                    controller: controller,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      hintText: 'Required',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      errorText: isRequired && value.isEmpty && _isEditingCustomer 
+                          ? 'This field is required' 
+                          : null,
+                      errorStyle: const TextStyle(fontSize: 11),
+                    ),
+                  )
+                : Text(
+                    value.isEmpty ? '-' : value,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                      color: bold ? AppColors.primary : Colors.grey[800],
+                    ),
+                  ),
           ),
         ],
       ),
     );
+  }
+  
+  /// Validate all required customer fields before saving
+  Future<void> _validateAndSaveCustomer(Customer customer) async {
+    // Get current values (use preview customer if edited, otherwise original)
+    final customerToValidate = _previewCustomer ?? customer;
+    
+    final missingFields = <String>[];
+    
+    // Check all required fields
+    if (customerToValidate.name.trim().isEmpty) {
+      missingFields.add('Company/Name');
+    }
+    if (customerToValidate.tin == null || customerToValidate.tin!.trim().isEmpty) {
+      missingFields.add('TIN');
+    }
+    if (customerToValidate.registrationNumber == null || customerToValidate.registrationNumber!.trim().isEmpty) {
+      missingFields.add('Registration No.');
+    }
+    if (customerToValidate.identificationNumber == null || customerToValidate.identificationNumber!.trim().isEmpty) {
+      missingFields.add('ID Number');
+    }
+    if (customerToValidate.email == null || customerToValidate.email!.trim().isEmpty) {
+      missingFields.add('Email');
+    }
+    if (customerToValidate.contactNumber == null || customerToValidate.contactNumber!.trim().isEmpty) {
+      missingFields.add('Phone');
+    }
+    if (customerToValidate.sstNumber == null || customerToValidate.sstNumber!.trim().isEmpty) {
+      missingFields.add('SST Number');
+    }
+    if (customerToValidate.contactPerson == null || customerToValidate.contactPerson!.trim().isEmpty) {
+      missingFields.add('Contact Person');
+    }
+    
+    // Check address fields
+    final address = customerToValidate.primaryAddress;
+    if (address == null) {
+      missingFields.add('Primary Address');
+    } else {
+      if (address.line1.trim().isEmpty) missingFields.add('Street Line 1');
+      if (address.line2 == null || address.line2!.trim().isEmpty) missingFields.add('Street Line 2');
+      if (address.line3 == null || address.line3!.trim().isEmpty) missingFields.add('Street Line 3');
+      if (address.city.trim().isEmpty) missingFields.add('City');
+      if (address.state.trim().isEmpty) missingFields.add('State');
+      if (address.postalCode.trim().isEmpty) missingFields.add('Postal Code');
+      if (address.country.trim().isEmpty) missingFields.add('Country');
+    }
+    
+    // If there are missing fields, show error
+    if (missingFields.isNotEmpty) {
+      final fieldsText = missingFields.join(', ');
+      Helpers.showErrorSnackbar(
+        context,
+        'Please fill in all required fields:\n$fieldsText',
+      );
+      return;
+    }
+    
+    // All fields are valid, proceed with saving
+    await _saveCustomer(customerToValidate);
   }
   
   Future<void> _saveCustomer(Customer customer) async {
@@ -1489,6 +1901,66 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
         setState(() => _isProcessing = false);
       }
     }
+  }
+
+  /// Populate customer controllers when entering edit mode
+  void _populateCustomerControllers(Customer customer) {
+    _customerNameEditController.text = customer.name;
+    _customerTinController.text = customer.tin ?? '';
+    _customerRegistrationController.text = customer.registrationNumber ?? '';
+    _customerIdNumberController.text = customer.identificationNumber ?? '';
+    _customerEmailController.text = customer.email ?? '';
+    _customerPhoneController.text = customer.contactNumber ?? '';
+    _customerSstController.text = customer.sstNumber ?? '';
+    _customerContactPersonController.text = customer.contactPerson ?? '';
+    
+    // Address fields
+    final address = customer.primaryAddress;
+    _customerAddressLine1Controller.text = address?.line1 ?? '';
+    _customerAddressLine2Controller.text = address?.line2 ?? '';
+    _customerAddressLine3Controller.text = address?.line3 ?? '';
+    _customerCityController.text = address?.city ?? '';
+    _customerStateController.text = address?.state ?? '';
+    _customerPostalCodeController.text = address?.postalCode ?? '';
+    _customerCountryController.text = address?.country ?? 'MY';
+    
+    _customerNotesController.text = customer.notes ?? '';
+  }
+
+  /// Create updated customer object from controller values
+  Customer _updateCustomerFromControllers(Customer original) {
+    final addressId = original.primaryAddress?.id ?? '${original.id}_addr_1';
+    
+    return Customer(
+      id: original.id,
+      name: _customerNameEditController.text.trim(),
+      tin: _customerTinController.text.trim(),
+      registrationNumber: _customerRegistrationController.text.trim(),
+      identificationNumber: _customerIdNumberController.text.trim(),
+      email: _customerEmailController.text.trim(),
+      contactNumber: _customerPhoneController.text.trim(),
+      sstNumber: _customerSstController.text.trim(),
+      contactPerson: _customerContactPersonController.text.trim(),
+      addresses: [
+        CustomerAddress(
+          id: addressId,
+          line1: _customerAddressLine1Controller.text.trim(),
+          line2: _customerAddressLine2Controller.text.trim(),
+          line3: _customerAddressLine3Controller.text.trim(),
+          city: _customerCityController.text.trim(),
+          state: _customerStateController.text.trim(),
+          postalCode: _customerPostalCodeController.text.trim(),
+          country: _customerCountryController.text.trim(),
+          isPrimary: true,
+          label: 'Primary',
+        ),
+      ],
+      notes: _customerNotesController.text.trim().isEmpty 
+          ? null : _customerNotesController.text.trim(),
+      createdAt: original.createdAt,
+      updatedAt: DateTime.now(),
+      createdBy: original.createdBy,
+    );
   }
 
   Widget _buildInvoicePreviewCard(Invoice invoice, Map<String, dynamic> message, int messageIndex) {
@@ -2288,14 +2760,24 @@ class _MarkdownText extends StatelessWidget {
     required this.textColor,
   });
 
+  /// Sanitize text to remove invalid UTF-16 characters
+  String _sanitizeText(String text) {
+    try {
+      // Remove invalid UTF-16 characters
+      final cleanText = text.replaceAll(RegExp(r'[\uD800-\uDFFF]'), '');
+      return cleanText;
+    } catch (e) {
+      return text;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    print('DEBUG MarkdownText: Received text length=${text.length}');
-    print('DEBUG MarkdownText: Text preview: ${text.substring(0, text.length > 200 ? 200 : text.length)}');
+    final sanitizedText = _sanitizeText(text);
     
     return RichText(
       text: TextSpan(
-        children: _parseMarkdown(text, context),
+        children: _parseMarkdown(sanitizedText, context),
         style: TextStyle(color: textColor, fontSize: 14, height: 1.5),
       ),
     );

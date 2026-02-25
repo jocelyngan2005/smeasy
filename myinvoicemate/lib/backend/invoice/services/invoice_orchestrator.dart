@@ -100,14 +100,21 @@ class InvoiceGenerationOrchestrator {
     required String userId,
     bool saveDraft = true,
   }) async {
+    print('DEBUG Orchestrator: generateFromReceiptFile called');
+    print('DEBUG Orchestrator: File path: ${imageFile.path}');
+    
     try {
       // Scan receipt using Gemini Vision
+      print('DEBUG Orchestrator: Calling GeminiVisionService.scanReceipt...');
       final draft = await _geminiVisionService.scanReceipt(
         imageFile: imageFile,
       );
+      print('DEBUG Orchestrator: Received draft from Gemini');
 
       // Drafts are kept in-memory; saved to Firestore only on finalization.
       const String? draftId = null;
+      
+      print('DEBUG Orchestrator: Draft created successfully');
 
       return InvoiceGenerationResult(
         draft: draft,
@@ -117,7 +124,9 @@ class InvoiceGenerationOrchestrator {
             : InvoiceGenerationStatus.requiresReview,
         message: _generateStatusMessage(draft),
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('DEBUG Orchestrator: ERROR in generateFromReceiptFile - $e');
+      print('DEBUG Orchestrator: Stack trace: $stackTrace');
       return InvoiceGenerationResult(
         status: InvoiceGenerationStatus.failed,
         message: 'Failed to scan receipt: $e',
