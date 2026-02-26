@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>MyInvoisMate needs your location to find the nearest LHDN centres.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>MyInvoisMate needs your location to find the nearest LHDN centres.</string>
 </dict>
 </plist>

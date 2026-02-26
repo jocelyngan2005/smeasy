@@ -382,6 +382,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
               'type': 'assistant',
               'text': responseText.toString(),
               'customer': result.customer,
+              'isSaved': false,
               'timestamp': DateTime.now(),
             });
             
@@ -1475,7 +1476,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                         if (message['invoice'] != null)
                           _buildInvoicePreviewCard(message['invoice'], message, index),
                         if (message['customer'] != null)
-                          _buildCustomerPreviewCard(message['customer']),
+                          _buildCustomerPreviewCard(message['customer'], message, index),
                       ],
                     ),
                   ),
@@ -1497,7 +1498,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
     );
   }
 
-  Widget _buildCustomerPreviewCard(Customer customer) {
+  Widget _buildCustomerPreviewCard(Customer customer, Map<String, dynamic> message, int messageIndex) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1534,18 +1535,10 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                     onPressed: () {
                       setState(() {
                         if (_isEditingCustomer) {
-                          // Save changes - update preview customer
-                          _previewCustomer = _updateCustomerFromControllers(customer);
-                          
-                          // Update customer in the message
-                          for (int i = _messages.length - 1; i >= 0; i--) {
-                            if (_messages[i]['type'] == 'assistant' && 
-                                _messages[i]['customer'] != null) {
-                              _messages[i]['customer'] = _previewCustomer;
-                              break;
-                            }
-                          }
-                          
+                          // Save changes - update customer in this specific message
+                          final updatedCustomer = _updateCustomerFromControllers(customer);
+                          _messages[messageIndex]['customer'] = updatedCustomer;
+                          _previewCustomer = updatedCustomer;
                           _isEditingCustomer = false;
                         } else {
                           // Enter edit mode - populate controllers
@@ -1690,12 +1683,13 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
           children: [
             Expanded(
               child: ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _previewCustomer = null;
-                    _messages.removeWhere((msg) => msg['customer'] != null);
-                  });
-                },
+                onPressed: (message['isSaved'] as bool? ?? false)
+                    ? null
+                    : () {
+                        setState(() {
+                          _messages.removeAt(messageIndex);
+                        });
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.grey[300],
                   foregroundColor: Colors.black87,
@@ -1715,15 +1709,21 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF2E3193), Color(0xFF0533F4)],
+                  gradient: LinearGradient(
+                    colors: (message['isSaved'] as bool? ?? false)
+                        ? [const Color(0xFF1A8B4A), const Color(0xFF2ECC71)]
+                        : [const Color(0xFF2E3193), const Color(0xFF0533F4)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: ElevatedButton(
-                  onPressed: () => _validateAndSaveCustomer(customer),
+                  onPressed: _isProcessing
+                      ? null
+                      : (message['isSaved'] as bool? ?? false)
+                          ? null
+                          : () => _validateAndSaveCustomer(customer, messageIndex),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     foregroundColor: Colors.white,
@@ -1734,9 +1734,18 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                     ),
                     elevation: 0,
                   ),
-                  child: const Text(
-                    'Save Customer',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (message['isSaved'] as bool? ?? false) ...[
+                        const Icon(Icons.check_circle, size: 16),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        (message['isSaved'] as bool? ?? false) ? 'Saved' : 'Save Customer',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1810,9 +1819,9 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
   }
   
   /// Validate all required customer fields before saving
-  Future<void> _validateAndSaveCustomer(Customer customer) async {
-    // Get current values (use preview customer if edited, otherwise original)
-    final customerToValidate = _previewCustomer ?? customer;
+  Future<void> _validateAndSaveCustomer(Customer customer, int messageIndex) async {
+    // Get current values from the specific message (reflects any edits)
+    final customerToValidate = (_messages[messageIndex]['customer'] as Customer?) ?? customer;
     
     final missingFields = <String>[];
     
@@ -1867,10 +1876,10 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
     }
     
     // All fields are valid, proceed with saving
-    await _saveCustomer(customerToValidate);
+    await _saveCustomer(customerToValidate, messageIndex);
   }
   
-  Future<void> _saveCustomer(Customer customer) async {
+  Future<void> _saveCustomer(Customer customer, int messageIndex) async {
     setState(() => _isProcessing = true);
 
     try {
@@ -1883,13 +1892,8 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
         );
 
         setState(() {
-          _previewCustomer = null;
-          // Add success message
-          _messages.add({
-            'type': 'assistant',
-            'text': '✅ Customer "${customer.name}" has been added to your database.\n\nYou can now use this customer when creating invoices.',
-            'timestamp': DateTime.now(),
-          });
+          // Mark only this specific message as saved
+          _messages[messageIndex]['isSaved'] = true;
           _isProcessing = false;
         });
 
