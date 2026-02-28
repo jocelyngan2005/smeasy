@@ -254,7 +254,15 @@ class _InvoiceCreateScreenState extends State<InvoiceCreateScreen> {
 
     setState(() => _isSaving = true);
     try {
-      final invoice = _buildInvoiceFromForm(AppConstants.statusSubmitted);
+      // Build the invoice and stamp submission-specific fields
+      final now = DateTime.now();
+      final invoice = _buildInvoiceFromForm(AppConstants.statusSubmitted).copyWith(
+        complianceStatus: ComplianceStatus.submitted,
+        submissionDate: now,
+        myInvoisReferenceId: 'MYI${now.millisecondsSinceEpoch}',
+        updatedAt: now,
+      );
+
       if (_isEditing) {
         await _invoiceService.updateInvoice(invoice);
       } else {
@@ -1585,7 +1593,8 @@ class _LhdnValidationDialogState extends State<_LhdnValidationDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-      child: Padding(
+      child: SingleChildScrollView(
+        child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1700,6 +1709,7 @@ class _LhdnValidationDialogState extends State<_LhdnValidationDialog> {
             ],
           ],
         ),
+      ),
       ),
     );
   }

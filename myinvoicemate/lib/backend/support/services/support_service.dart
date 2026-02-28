@@ -23,6 +23,16 @@ class SupportService {
   // Queries
   // ---------------------------------------------------------------------------
 
+  /// Return every support location without any distance filtering.
+  Future<List<SupportLocation>> getAllLocations() async {
+    var all = await _fetchAll();
+    if (all.isEmpty) {
+      await seedDefaultLocations();
+      all = _defaultLocations();
+    }
+    return all;
+  }
+
   /// Return all support locations sorted by distance to [latitude]/[longitude].
   ///
   /// Proximity filtering is done client-side because Firestore's native

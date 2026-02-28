@@ -133,11 +133,14 @@ class Helpers {
   }
 
   static bool isValidTIN(String tin) {
-    // Malaysian TIN validation (basic)
-    return tin.length >= 10 && RegExp(r'^[0-9]+$').hasMatch(tin);
+    // Malaysian TIN: optional 1-2 letter prefix followed by 10-13 digits
+    // e.g. C12345678900 (company), IG12345678900 (individual), or purely numeric
+    return RegExp(r'^[A-Za-z]{0,2}[0-9]{10,13}$').hasMatch(tin.trim());
   }
 
   static bool isValidPhone(String phone) {
-    return RegExp(r'^[0-9]{10,11}$').hasMatch(phone.replaceAll('-', ''));
+    // Strip spaces, dashes, and leading +60 / 0 country prefix
+    final digits = phone.replaceAll(RegExp(r'[\s\-]'), '').replaceFirst(RegExp(r'^\+?60'), '0');
+    return RegExp(r'^0[0-9]{8,10}$').hasMatch(digits);
   }
 }

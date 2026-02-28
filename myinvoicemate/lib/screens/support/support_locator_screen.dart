@@ -84,10 +84,7 @@ class _SupportLocatorScreenState extends State<SupportLocatorScreen> {
     setState(() => _isLoading = true);
     try {
       final locations = type == null
-          ? await _supportService.getNearbyLocations(
-              _currentPosition.latitude,
-              _currentPosition.longitude,
-            )
+          ? await _supportService.getAllLocations()
           : await _supportService.getLocationsByType(type);
 
       if (!mounted) return;
