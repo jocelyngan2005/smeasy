@@ -129,7 +129,7 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
 | Mobile Framework | Flutter (Dart SDK `^3.10.8`) |
 | AI — Text/Voice to Invoice | Google Gemini 2.5 Flash (`google_generative_ai`) |
 | AI — Receipt Scanning | Google Gemini 2.5 Flash Vision (multimodal) |
-| AI — Knowledge Assistant | Google Gemini 2.0 Flash Exp + Vertex AI Search |
+| AI — Knowledge Assistant | Google Gemini 2.5 Flash + Vertex AI Search |
 | Authentication | Firebase Authentication |
 | Database | Cloud Firestore |
 | Maps | Google Maps Flutter SDK |
@@ -164,12 +164,12 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
         │ Gemini 2.5    │    │  /users             │   │                  │
         │ Flash Vision  │    │  /invoices          │   └──────────────────┘
         │               │    │  /invoice_drafts    │
-        │ Gemini 2.0    │    │  /customers         │   ┌──────────────────┐
-        │ Flash Exp     │    │  /compliance_alerts │   │  LHDN MyInvois   │
-        │               │    │  /compliance_       │   │  API             │
-        │ Vertex AI     │    │    questions        │   │                  │
-        │ Search        │    │  /support_locations │   │  (Submission &   │
-        └───────────────┘    │  /analytics_cache   │   │   Validation)    │
+        │ Vertex AI     │    │  /customers         │   ┌──────────────────┐
+        │ Search        │    │  /compliance_alerts │   │  LHDN MyInvois   │
+        └───────────────┘    │  /compliance_       │   │  API             │
+                             │    questions        │   │                  │
+                             │  /support_locations │   │  (Submission &   │
+                             │  /analytics_cache   │   │   Validation)    │
                              └─────────────────────┘   └──────────────────┘
 ```
 
@@ -259,7 +259,7 @@ Our development followed a 3-stage feedback loop to ensure the app remained rele
 ---
 
 ### 7. SME Compliance Knowledge Assistant
-**Google Technologies:** Gemini 2.0 Flash Exp, Vertex AI Search, Cloud Firestore  
+**Google Technologies:** Gemini 2.5 Flash, Vertex AI Search, Cloud Firestore  
 *Gemini 2.0 Flash Exp's lower temperature configuration (0.3) and large context window make it suitable for factual, grounded compliance Q&A — crucial for a regulated domain like tax law. Vertex AI Search provides enterprise-grade semantic search with built-in document chunking, spell correction, and query expansion, delivering verifiable, cited answers from indexed LHDN documents — required where hallucinations carry legal risk.*
 
 - Conversational chat interface for LHDN compliance questions

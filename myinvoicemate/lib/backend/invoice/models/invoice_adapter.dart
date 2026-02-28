@@ -224,11 +224,13 @@ extension InvoiceCompat on Invoice {
   String get buyerAddress => 
       '${buyer.address.line1}${buyer.address.line2 != null ? ', ${buyer.address.line2}' : ''}, ${buyer.address.city}, ${buyer.address.state} ${buyer.address.postalCode}';
     // e-Invoice Compliance getters
-  String get buyerRegistrationNumber => buyer.identificationNumber ?? PartyInfo.getDefaultIdentificationNumber();
+  String get buyerRegistrationNumber => buyer.registrationNumber ?? '';
+  String get buyerIdentificationNumber => buyer.identificationNumber ?? PartyInfo.getDefaultIdentificationNumber();
   String get buyerContactNumber => buyer.contactNumber ?? '';
   String get buyerSstNumber => buyer.sstNumber ?? PartyInfo.getDefaultSstNumber();
   
-  String get sellerRegistrationNumber => vendor.identificationNumber ?? PartyInfo.getDefaultIdentificationNumber();
+  String get sellerRegistrationNumber => vendor.registrationNumber ?? '';
+  String get sellerIdentificationNumber => vendor.identificationNumber ?? PartyInfo.getDefaultIdentificationNumber();
   String get sellerContactNumber => vendor.contactNumber ?? '';
   String get sellerSstNumber => vendor.sstNumber ?? PartyInfo.getDefaultSstNumber();
   

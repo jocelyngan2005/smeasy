@@ -1229,7 +1229,8 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                               child: TextField(
                                 controller: _textController,
                                 focusNode: _textFocusNode,
-                                maxLines: null,
+                                minLines: 1,
+                                maxLines: 7,
                                 decoration: InputDecoration(
                                   hintText: 'Ask anything',
                                   hintStyle: TextStyle(
@@ -2044,6 +2045,7 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                         buyer: _previewInvoice!.buyer.copyWith(
                           name: _customerNameController.text,
                           tin: _tinController.text,
+                          registrationNumber: _buyerIdController.text,
                           address: buyerAddressParts.isNotEmpty
                               ? Address(
                                   line1: buyerAddressParts[0],
@@ -2059,6 +2061,9 @@ Respond with ONLY ONE phrase: compliance_question OR customer_creation OR invoic
                         taxAmount: taxAmount,
                         totalAmount: totalAmount,
                       );
+                      
+                      // Update the invoice in the message as well
+                      message['invoice'] = _previewInvoice;
                     }
                     _isEditingInvoice = false;
                   } else {
